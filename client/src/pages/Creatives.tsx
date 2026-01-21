@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { trpc } from "@/lib/trpc";
-import { format } from "date-fns";
+import { useDateRange } from "@/contexts/DateRangeContext";
 import { AlertCircle, ArrowRight, Calendar, Image as ImageIcon, Loader2, Search, Video, X } from "lucide-react";
 import { useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from "recharts";
@@ -13,10 +13,7 @@ import { Link } from "wouter";
 
 export default function Creatives() {
   const { user } = useAuth();
-  const [dateRange, setDateRange] = useState({
-    since: format(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), "yyyy-MM-dd"),
-    until: format(new Date(), "yyyy-MM-dd"),
-  });
+  const { dateRange, setDateRange, dateError } = useDateRange();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedAdId, setSelectedAdId] = useState<string | null>(null);
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
@@ -52,13 +49,20 @@ export default function Creatives() {
 
   // Calculate video retention metrics
   const getVideoRetentionMetrics = (ad: any) => {
+    // Extract video metrics from the API response
+    const videoPlays = ad.video_play_actions?.[0]?.value ? parseInt(ad.video_play_actions[0].value, 10) : 0;
+    const thruplays = ad.video_thruplay_watched_actions?.[0]?.value ? parseInt(ad.video_thruplay_watched_actions[0].value, 10) : 0;
+    const avgTimeWatched = ad.video_avg_time_watched_actions?.[0]?.value ? parseFloat(ad.video_avg_time_watched_actions[0].value) : 0;
     const p50 = ad.video_p50_watched_actions?.[0]?.value ? parseInt(ad.video_p50_watched_actions[0].value, 10) : 0;
     const p100 = ad.video_p100_watched_actions?.[0]?.value ? parseInt(ad.video_p100_watched_actions[0].value, 10) : 0;
 
     return {
+      videoPlays,
+      thruplays,
+      avgTimeWatched,
       p50,
       p100,
-      hasVideoData: p50 > 0 || p100 > 0,
+      hasVideoData: videoPlays > 0 || thruplays > 0 || p50 > 0 || p100 > 0,
     };
   };
 
@@ -295,34 +299,68 @@ export default function Creatives() {
                     const metrics = getVideoRetentionMetrics(ad);
                     if (!metrics.hasVideoData) return null;
 
+                    const formatTime = (seconds: number) => {
+                      if (seconds < 60) return `${seconds.toFixed(1)}s`;
+                      const mins = Math.floor(seconds / 60);
+                      const secs = Math.round(seconds % 60);
+                      return `${mins}m ${secs}s`;
+                    };
+
                     return (
                       <div className="space-y-4 p-4 bg-accent/20 rounded-lg border border-border">
                         <h3 className="font-semibold text-foreground">📊 Métricas de Retención de Video</h3>
-                        <div className="grid grid-cols-2 gap-4 text-sm">
-                          <div className="bg-background p-3 rounded border border-border">
-                            <Label className="text-xs text-muted-foreground">Retención 50% (Interés Real)</Label>
-                            <p className="text-lg font-bold text-foreground mt-1">{metrics.p50.toLocaleString()}</p>
-                          </div>
-                          <div className="bg-background p-3 rounded border border-border">
-                            <Label className="text-xs text-muted-foreground">Retención 100% (Finalización)</Label>
-                            <p className="text-lg font-bold text-foreground mt-1">{metrics.p100.toLocaleString()}</p>
-                          </div>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                          {metrics.videoPlays > 0 && (
+                            <div className="bg-background p-3 rounded border border-border">
+                              <Label className="text-xs text-muted-foreground">Vistas 3s (Hook / Scroll-Stop)</Label>
+                              <p className="text-lg font-bold text-foreground mt-1">{metrics.videoPlays.toLocaleString()}</p>
+                            </div>
+                          )}
+                          {metrics.thruplays > 0 && (
+                            <div className="bg-background p-3 rounded border border-border">
+                              <Label className="text-xs text-muted-foreground">ThruPlays (Retención mínima 15s)</Label>
+                              <p className="text-lg font-bold text-foreground mt-1">{metrics.thruplays.toLocaleString()}</p>
+                            </div>
+                          )}
+                          {metrics.avgTimeWatched > 0 && (
+                            <div className="bg-background p-3 rounded border border-border">
+                              <Label className="text-xs text-muted-foreground">Tiempo promedio visto (Calidad real)</Label>
+                              <p className="text-lg font-bold text-foreground mt-1">{formatTime(metrics.avgTimeWatched)}</p>
+                            </div>
+                          )}
+                          {metrics.p50 > 0 && (
+                            <div className="bg-background p-3 rounded border border-border">
+                              <Label className="text-xs text-muted-foreground">Retención 50% (Interés real)</Label>
+                              <p className="text-lg font-bold text-foreground mt-1">{metrics.p50.toLocaleString()}</p>
+                            </div>
+                          )}
+                          {metrics.p100 > 0 && (
+                            <div className="bg-background p-3 rounded border border-border">
+                              <Label className="text-xs text-muted-foreground">Retención 100% (Finalización)</Label>
+                              <p className="text-lg font-bold text-foreground mt-1">{metrics.p100.toLocaleString()}</p>
+                            </div>
+                          )}
                         </div>
-                        <div className="mt-4">
-                          <Label className="text-xs text-muted-foreground mb-2 block">Comparativa de Retención</Label>
-                          <ResponsiveContainer width="100%" height={200}>
-                            <BarChart data={[
-                              { name: "50%", value: metrics.p50 },
-                              { name: "100%", value: metrics.p100 },
-                            ]}>
-                              <CartesianGrid strokeDasharray="3 3" />
-                              <XAxis dataKey="name" />
-                              <YAxis />
-                              <Tooltip />
-                              <Bar dataKey="value" fill="#3b82f6" />
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
+                        {(metrics.videoPlays > 0 || metrics.thruplays > 0 || metrics.p50 > 0 || metrics.p100 > 0) && (
+                          <div className="mt-4">
+                            <Label className="text-xs text-muted-foreground mb-2 block">Embudo de Retención</Label>
+                            <ResponsiveContainer width="100%" height={250}>
+                              <BarChart data={[
+                                ...(metrics.videoPlays > 0 ? [{ name: "Vistas 3s", value: metrics.videoPlays }] : []),
+                                ...(metrics.thruplays > 0 ? [{ name: "ThruPlays", value: metrics.thruplays }] : []),
+                                ...(metrics.p50 > 0 ? [{ name: "50%", value: metrics.p50 }] : []),
+                                ...(metrics.p100 > 0 ? [{ name: "100%", value: metrics.p100 }] : []),
+                              ]}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="name" />
+                                <YAxis />
+                                <Tooltip />
+                                <Legend />
+                                <Bar dataKey="value" fill="#3b82f6" name="Reproducciones" />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        )}
                       </div>
                     );
                   })()}
