@@ -1,0 +1,1 @@
+ALTER TABLE `meta_ads_cache` MODIFY COLUMN `data` longtext NOT NULL;
