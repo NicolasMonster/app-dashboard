@@ -5,6 +5,21 @@ import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
+// In-memory storage for when database is not available
+interface InMemoryCredentials {
+  userId: number;
+  accountId: string;
+  accessToken: string;
+}
+
+interface InMemoryCache {
+  data: string;
+  expiresAt: Date;
+}
+
+const inMemoryCredentials = new Map<number, InMemoryCredentials>();
+const inMemoryCache = new Map<string, InMemoryCache>();
+
 // Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
@@ -93,7 +108,14 @@ export async function getUserByOpenId(openId: string) {
 export async function saveMetaAdsCredentials(userId: number, accountId: string, accessToken: string) {
   const db = await getDb();
   if (!db) {
-    throw new Error("Database not available");
+    // Use in-memory storage when database is not available
+    console.log("[Database] Saving credentials in memory for userId:", userId);
+    inMemoryCredentials.set(userId, {
+      userId,
+      accountId,
+      accessToken,
+    });
+    return;
   }
 
   const { metaAdsCredentials } = await import("../drizzle/schema");
@@ -114,7 +136,12 @@ export async function saveMetaAdsCredentials(userId: number, accountId: string, 
 export async function getMetaAdsCredentials(userId: number) {
   const db = await getDb();
   if (!db) {
-    return undefined;
+    // Use in-memory storage when database is not available
+    const credentials = inMemoryCredentials.get(userId);
+    if (credentials) {
+      console.log("[Database] Retrieved credentials from memory for userId:", userId);
+    }
+    return credentials;
   }
 
   const { metaAdsCredentials } = await import("../drizzle/schema");
@@ -126,6 +153,9 @@ export async function getMetaAdsCredentials(userId: number) {
 export async function deleteMetaAdsCredentials(userId: number) {
   const db = await getDb();
   if (!db) {
+    // Use in-memory storage when database is not available
+    console.log("[Database] Deleting credentials from memory for userId:", userId);
+    inMemoryCredentials.delete(userId);
     return;
   }
 
@@ -137,6 +167,18 @@ export async function deleteMetaAdsCredentials(userId: number) {
 export async function getCachedData(userId: number, cacheKey: string) {
   const db = await getDb();
   if (!db) {
+    // Use in-memory storage when database is not available
+    const key = `${userId}:${cacheKey}`;
+    const cached = inMemoryCache.get(key);
+
+    if (cached && cached.expiresAt > new Date()) {
+      try {
+        return JSON.parse(cached.data);
+      } catch {
+        return undefined;
+      }
+    }
+
     return undefined;
   }
 
@@ -167,6 +209,13 @@ export async function getCachedData(userId: number, cacheKey: string) {
 export async function setCachedData(userId: number, cacheKey: string, data: unknown, ttlMinutes: number = 30) {
   const db = await getDb();
   if (!db) {
+    // Use in-memory storage when database is not available
+    const key = `${userId}:${cacheKey}`;
+    const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000);
+    inMemoryCache.set(key, {
+      data: JSON.stringify(data),
+      expiresAt,
+    });
     return;
   }
 
@@ -189,6 +238,13 @@ export async function setCachedData(userId: number, cacheKey: string, data: unkn
 export async function clearExpiredCache() {
   const db = await getDb();
   if (!db) {
+    // Clear expired cache from in-memory storage
+    const now = new Date();
+    inMemoryCache.forEach((value, key) => {
+      if (value.expiresAt < now) {
+        inMemoryCache.delete(key);
+      }
+    });
     return;
   }
 

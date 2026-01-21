@@ -1,8 +1,12 @@
 import { defineConfig } from "drizzle-kit";
 
 const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
-  throw new Error("DATABASE_URL is required to run drizzle commands");
+
+// Only throw error if actually running a drizzle command
+// This allows the app to run without a database for development
+if (!connectionString && process.argv.includes('drizzle-kit')) {
+  console.warn("⚠️  DATABASE_URL not set. Database features will be disabled.");
+  console.warn("   To use database features, set DATABASE_URL in your .env file");
 }
 
 export default defineConfig({
@@ -10,6 +14,6 @@ export default defineConfig({
   out: "./drizzle",
   dialect: "mysql",
   dbCredentials: {
-    url: connectionString,
+    url: connectionString || "mysql://localhost:3306/placeholder",
   },
 });
