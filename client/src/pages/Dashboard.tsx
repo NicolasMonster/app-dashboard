@@ -3,9 +3,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
-import { format } from "date-fns";
+import { useDateRange } from "@/contexts/DateRangeContext";
 import { AlertCircle, ArrowRight, Calendar, DollarSign, Eye, Loader2, MousePointerClick, TrendingUp } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Bar, BarChart, Pie, PieChart, Cell } from "recharts";
 import { toast } from "sonner";
 import { Link } from "wouter";
@@ -14,57 +14,11 @@ const COLORS = ["#3b82f6", "#8b5cf6", "#ec4899", "#f59e0b", "#10b981"];
 
 export default function Dashboard() {
   const { user } = useAuth();
-  const [dateRange, setDateRange] = useState({
-    since: format(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), "yyyy-MM-dd"),
-    until: format(new Date(), "yyyy-MM-dd"),
-  });
-  const [dateError, setDateError] = useState<string | null>(null);
-
-  // Validate date range
-  const validateDateRange = (since: string, until: string) => {
-    if (!since || !until) {
-      setDateError("Ambas fechas son requeridas");
-      return false;
-    }
-
-    const sinceDate = new Date(since);
-    const untilDate = new Date(until);
-    const now = new Date();
-
-    // Check if dates are valid
-    if (isNaN(sinceDate.getTime()) || isNaN(untilDate.getTime())) {
-      setDateError("Formato de fecha inválido");
-      return false;
-    }
-
-    // Check if since is before until
-    if (sinceDate > untilDate) {
-      setDateError("La fecha de inicio debe ser anterior a la fecha de fin");
-      return false;
-    }
-
-    // Check if until is not in the future
-    if (untilDate > now) {
-      setDateError("La fecha de fin no puede ser en el futuro");
-      return false;
-    }
-
-    // Check if since is not more than 37 months in the past
-    const maxPastDate = new Date();
-    maxPastDate.setMonth(maxPastDate.getMonth() - 37);
-    if (sinceDate < maxPastDate) {
-      setDateError("Meta Ads API solo permite datos de hasta 37 meses atrás");
-      return false;
-    }
-
-    setDateError(null);
-    return true;
-  };
+  const { dateRange, setDateRange, dateError } = useDateRange();
 
   const handleDateChange = (field: "since" | "until", value: string) => {
     const newRange = { ...dateRange, [field]: value };
     setDateRange(newRange);
-    validateDateRange(newRange.since, newRange.until);
   };
 
   const { data: credentials } = trpc.metaAds.getCredentials.useQuery();
@@ -126,29 +80,39 @@ export default function Dashboard() {
     }));
   }, [campaignInsights]);
 
-  // Calculate ROI metrics
+  // Calculate ROI metrics from account-level data for consistency
   const roiMetrics = useMemo(() => {
-    if (!insights || insights.length === 0) {
+    if (!metrics) {
       return { totalSpend: 0, totalGenerated: 0, roas: 0, roi: 0 };
     }
 
-    let totalSpend = 0;
-    let totalGenerated = 0;
+    // Use metrics from getMetrics query (account-level aggregation)
+    const totalSpend = metrics.totalSpend || 0;
 
-    insights.forEach((insight: any) => {
-      totalSpend += parseFloat(insight.spend || "0");
-      if (insight.action_values && Array.isArray(insight.action_values)) {
-        insight.action_values.forEach((action: any) => {
-          totalGenerated += parseFloat(action.value || "0");
-        });
-      }
-    });
+    // Calculate total revenue from insights, filtering only purchase-related conversions
+    let totalGenerated = 0;
+    if (insights && insights.length > 0) {
+      insights.forEach((insight: any) => {
+        if (insight.action_values && Array.isArray(insight.action_values)) {
+          insight.action_values.forEach((action: any) => {
+            // Only count purchase-related conversions to avoid duplication
+            if (
+              action.action_type === "purchase" ||
+              action.action_type === "omni_purchase" ||
+              action.action_type === "offsite_conversion.fb_pixel_purchase"
+            ) {
+              totalGenerated += parseFloat(action.value || "0");
+            }
+          });
+        }
+      });
+    }
 
     const roas = totalSpend > 0 ? (totalGenerated / totalSpend).toFixed(2) : "0";
     const roi = totalSpend > 0 ? (((totalGenerated - totalSpend) / totalSpend) * 100).toFixed(1) : "0";
 
     return { totalSpend, totalGenerated, roas, roi };
-  }, [insights]);
+  }, [metrics, insights]);
 
   if (!user) {
     return (
@@ -338,21 +302,8 @@ export default function Dashboard() {
 
 
 
-        {/* ROI and Spend vs Generated */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Gasto Total</CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-foreground">
-                ${roiMetrics.totalSpend.toFixed(2)}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">Inversion en publicidad</p>
-            </CardContent>
-          </Card>
-
+        {/* ROI Metrics - Valor Generado y ROAS */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">Valor Generado</CardTitle>

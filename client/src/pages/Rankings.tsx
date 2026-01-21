@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
-import { format } from "date-fns";
+import { useDateRange } from "@/contexts/DateRangeContext";
 import { AlertCircle, ArrowRight, Calendar, Eye, Loader2, TrendingDown, TrendingUp, Video } from "lucide-react";
 import { useState } from "react";
 import { Link } from "wouter";
@@ -16,10 +16,7 @@ type SortBy = "ctr" | "cpc" | "conversions" | "roas";
 
 export default function Rankings() {
   const { user } = useAuth();
-  const [dateRange, setDateRange] = useState({
-    since: format(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), "yyyy-MM-dd"),
-    until: format(new Date(), "yyyy-MM-dd"),
-  });
+  const { dateRange, setDateRange, dateError } = useDateRange();
   const [sortBy, setSortBy] = useState<SortBy>("ctr");
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [selectedAdForModal, setSelectedAdForModal] = useState<any>(null);
