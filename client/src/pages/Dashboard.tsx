@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
 import { useDateRange } from "@/contexts/DateRangeContext";
+import { DateRangePicker } from "@/components/DateRangePicker";
 import { AlertCircle, ArrowRight, Calendar, DollarSign, Eye, Loader2, MousePointerClick, TrendingUp } from "lucide-react";
 import { useMemo } from "react";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Bar, BarChart, Pie, PieChart, Cell } from "recharts";
@@ -14,12 +15,7 @@ const COLORS = ["#3b82f6", "#8b5cf6", "#ec4899", "#f59e0b", "#10b981"];
 
 export default function Dashboard() {
   const { user } = useAuth();
-  const { dateRange, setDateRange, dateError } = useDateRange();
-
-  const handleDateChange = (field: "since" | "until", value: string) => {
-    const newRange = { ...dateRange, [field]: value };
-    setDateRange(newRange);
-  };
+  const { dateRange, dateError } = useDateRange();
 
   const { data: credentials } = trpc.metaAds.getCredentials.useQuery();
 
@@ -159,36 +155,18 @@ export default function Dashboard() {
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Meta Ads Dashboard</h1>
+            {/* Dashboard Title with Premium Gold Styling */}
+            <h1 className="text-3xl font-bold text-foreground">
+              <span className="bg-gradient-to-r from-[#D4AF37] to-[#C9A227] bg-clip-text text-transparent font-extrabold">
+                POWERNAX
+              </span>
+              <span className="text-muted-foreground font-normal"> – REPORTE DE META ADS</span>
+            </h1>
             <p className="text-muted-foreground mt-1">Análisis de rendimiento de tus campañas</p>
           </div>
 
-          {/* Date Range Selector */}
-          <Card className="md:w-auto">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-muted-foreground" />
-                  <Label className="text-sm text-muted-foreground">Desde:</Label>
-                  <input
-                    type="date"
-                    value={dateRange.since}
-                    onChange={(e) => handleDateChange("since", e.target.value)}
-                    className="bg-background border border-border rounded px-2 py-1 text-sm text-foreground"
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <Label className="text-sm text-muted-foreground">Hasta:</Label>
-                  <input
-                    type="date"
-                    value={dateRange.until}
-                    onChange={(e) => handleDateChange("until", e.target.value)}
-                    className="bg-background border border-border rounded px-2 py-1 text-sm text-foreground"
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          {/* Interactive Date Range Picker */}
+          <DateRangePicker />
           {dateError && (
             <Card className="border-red-500/50 bg-red-500/5">
               <CardContent className="p-4">

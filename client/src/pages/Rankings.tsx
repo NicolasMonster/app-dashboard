@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { DateRangePicker } from "@/components/DateRangePicker";
 import { trpc } from "@/lib/trpc";
 import { useDateRange } from "@/contexts/DateRangeContext";
 import { AlertCircle, ArrowRight, Calendar, Eye, Loader2, TrendingDown, TrendingUp, Video } from "lucide-react";
@@ -16,7 +17,7 @@ type SortBy = "ctr" | "cpc" | "conversions" | "roas";
 
 export default function Rankings() {
   const { user } = useAuth();
-  const { dateRange, setDateRange, dateError } = useDateRange();
+  const { dateRange, dateError } = useDateRange();
   const [sortBy, setSortBy] = useState<SortBy>("ctr");
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [selectedAdForModal, setSelectedAdForModal] = useState<any>(null);
@@ -89,32 +90,8 @@ export default function Rankings() {
             <p className="text-muted-foreground mt-1">Anuncios con mejor rendimiento</p>
           </div>
 
-          {/* Date Range Selector */}
-          <Card className="md:w-auto">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-muted-foreground" />
-                  <label className="text-sm text-muted-foreground">Desde:</label>
-                  <input
-                    type="date"
-                    value={dateRange.since}
-                    onChange={(e) => setDateRange({ ...dateRange, since: e.target.value })}
-                    className="bg-background border border-border rounded px-2 py-1 text-sm text-foreground"
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-sm text-muted-foreground">Hasta:</label>
-                  <input
-                    type="date"
-                    value={dateRange.until}
-                    onChange={(e) => setDateRange({ ...dateRange, until: e.target.value })}
-                    className="bg-background border border-border rounded px-2 py-1 text-sm text-foreground"
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          {/* Interactive Date Range Picker */}
+          <DateRangePicker />
         </div>
 
         {/* Rankings Tabs */}

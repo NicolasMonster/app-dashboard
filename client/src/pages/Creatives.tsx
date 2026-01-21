@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DateRangePicker } from "@/components/DateRangePicker";
 import { trpc } from "@/lib/trpc";
 import { useDateRange } from "@/contexts/DateRangeContext";
 import { AlertCircle, ArrowRight, Calendar, Image as ImageIcon, Loader2, Search, Video, X } from "lucide-react";
@@ -13,11 +14,13 @@ import { Link } from "wouter";
 
 export default function Creatives() {
   const { user } = useAuth();
-  const { dateRange, setDateRange, dateError } = useDateRange();
+  const { dateRange, dateError } = useDateRange();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedAdId, setSelectedAdId] = useState<string | null>(null);
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [selectedAdForModal, setSelectedAdForModal] = useState<any>(null);
+  const [videoModalOpen, setVideoModalOpen] = useState(false);
+  const [selectedVideo, setSelectedVideo] = useState<{ url?: string; thumbnail?: string } | null>(null);
 
   const { data: credentials } = trpc.metaAds.getCredentials.useQuery();
 
@@ -45,6 +48,12 @@ export default function Creatives() {
   const openDetailsModal = (ad: any) => {
     setSelectedAdForModal(ad);
     setDetailsModalOpen(true);
+  };
+
+  // Open video modal for playback
+  const openVideoModal = (videoUrl?: string, thumbnailUrl?: string) => {
+    setSelectedVideo({ url: videoUrl, thumbnail: thumbnailUrl });
+    setVideoModalOpen(true);
   };
 
   // Calculate video retention metrics
@@ -115,32 +124,8 @@ export default function Creatives() {
             <p className="text-muted-foreground mt-1">Visualiza el contenido de tus anuncios</p>
           </div>
 
-          {/* Date Range Selector with Calendar */}
-          <Card className="md:w-auto">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-muted-foreground" />
-                  <label className="text-sm text-muted-foreground">Desde:</label>
-                  <input
-                    type="date"
-                    value={dateRange.since}
-                    onChange={(e) => setDateRange({ ...dateRange, since: e.target.value })}
-                    className="bg-background border border-border rounded px-2 py-1 text-sm text-foreground"
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-sm text-muted-foreground">Hasta:</label>
-                  <input
-                    type="date"
-                    value={dateRange.until}
-                    onChange={(e) => setDateRange({ ...dateRange, until: e.target.value })}
-                    className="bg-background border border-border rounded px-2 py-1 text-sm text-foreground"
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          {/* Interactive Date Range Picker */}
+          <DateRangePicker />
         </div>
 
         {/* Search Bar */}
@@ -268,20 +253,33 @@ export default function Creatives() {
 
 
 
-                  {/* Video Thumbnail */}
+                  {/* Clickable Video Thumbnail with Modal Playback */}
                   {creative.thumbnail_url && (
                     <div>
                       <Label className="text-muted-foreground mb-2 block">Video (Miniatura)</Label>
-                      <div className="relative">
+                      <div
+                        className="relative cursor-pointer group transition-transform hover:scale-[1.02]"
+                        onClick={() => {
+                          // Try to get video URL from object_story_spec or use video_id
+                          const videoUrl = creative.object_story_spec?.link_data?.link ||
+                                          creative.object_story_spec?.video_data?.video_id ||
+                                          creative.video_id;
+                          openVideoModal(videoUrl, creative.thumbnail_url);
+                        }}
+                      >
                         <img
                           src={creative.thumbnail_url}
                           alt="Video thumbnail"
-                          className="w-full rounded-lg border border-border"
+                          className="w-full rounded-lg border border-border transition-opacity group-hover:opacity-90"
                         />
                         <div className="absolute inset-0 flex items-center justify-center">
-                          <div className="bg-black/50 rounded-full p-4">
+                          <div className="bg-black/60 group-hover:bg-black/70 rounded-full p-4 transition-all group-hover:scale-110">
                             <Video className="h-8 w-8 text-white" />
                           </div>
+                        </div>
+                        {/* Hover overlay hint */}
+                        <div className="absolute bottom-2 left-2 right-2 bg-black/70 text-white text-xs p-2 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                          Clic para ver video
                         </div>
                       </div>
                       {creative.video_id && (
@@ -292,7 +290,7 @@ export default function Creatives() {
                     </div>
                   )}
 
-                  {/* Video Retention Metrics */}
+                  {/* Video Retention Metrics with Percentages */}
                   {selectedAdId && insights && (() => {
                     const ad = insights.find((a: any) => a.ad_id === selectedAdId);
                     if (!ad) return null;
@@ -306,41 +304,81 @@ export default function Creatives() {
                       return `${mins}m ${secs}s`;
                     };
 
+                    // Calculate percentages based on initial video plays (3s views)
+                    const baseViews = metrics.videoPlays || 1; // Avoid division by zero
+                    const p50Percentage = metrics.p50 > 0 ? ((metrics.p50 / baseViews) * 100).toFixed(1) : "0";
+                    const p100Percentage = metrics.p100 > 0 ? ((metrics.p100 / baseViews) * 100).toFixed(1) : "0";
+                    const thruPlaysPercentage = metrics.thruplays > 0 ? ((metrics.thruplays / baseViews) * 100).toFixed(1) : "0";
+
                     return (
                       <div className="space-y-4 p-4 bg-accent/20 rounded-lg border border-border">
                         <h3 className="font-semibold text-foreground">📊 Métricas de Retención de Video</h3>
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                          {metrics.videoPlays > 0 && (
+
+                        {/* Video Plays - Base metric */}
+                        {metrics.videoPlays > 0 && (
+                          <div className="bg-background p-3 rounded border border-border">
+                            <Label className="text-xs text-muted-foreground">Vistas 3s (Hook / Scroll-Stop)</Label>
+                            <p className="text-lg font-bold text-foreground mt-1">{metrics.videoPlays.toLocaleString()}</p>
+                            <div className="mt-2 bg-muted h-2 rounded-full overflow-hidden">
+                              <div className="bg-primary h-full" style={{ width: "100%" }}></div>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1">100% · {metrics.videoPlays.toLocaleString()}</p>
+                          </div>
+                        )}
+
+                        {/* Retention metrics with percentages and progress bars */}
+                        <div className="space-y-3">
+                          {metrics.p50 > 0 && (
                             <div className="bg-background p-3 rounded border border-border">
-                              <Label className="text-xs text-muted-foreground">Vistas 3s (Hook / Scroll-Stop)</Label>
-                              <p className="text-lg font-bold text-foreground mt-1">{metrics.videoPlays.toLocaleString()}</p>
+                              <Label className="text-xs text-muted-foreground">Retención 50% (Interés real)</Label>
+                              <p className="text-lg font-bold text-foreground mt-1">{metrics.p50.toLocaleString()}</p>
+                              <div className="mt-2 bg-muted h-2 rounded-full overflow-hidden">
+                                <div
+                                  className="bg-blue-500 h-full transition-all duration-300"
+                                  style={{ width: `${p50Percentage}%` }}
+                                ></div>
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-1">{p50Percentage}% · {metrics.p50.toLocaleString()}</p>
                             </div>
                           )}
+
+                          {metrics.p100 > 0 && (
+                            <div className="bg-background p-3 rounded border border-border">
+                              <Label className="text-xs text-muted-foreground">Retención 100% (Finalización)</Label>
+                              <p className="text-lg font-bold text-foreground mt-1">{metrics.p100.toLocaleString()}</p>
+                              <div className="mt-2 bg-muted h-2 rounded-full overflow-hidden">
+                                <div
+                                  className="bg-green-500 h-full transition-all duration-300"
+                                  style={{ width: `${p100Percentage}%` }}
+                                ></div>
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-1">{p100Percentage}% · {metrics.p100.toLocaleString()}</p>
+                            </div>
+                          )}
+
                           {metrics.thruplays > 0 && (
                             <div className="bg-background p-3 rounded border border-border">
                               <Label className="text-xs text-muted-foreground">ThruPlays (Retención mínima 15s)</Label>
                               <p className="text-lg font-bold text-foreground mt-1">{metrics.thruplays.toLocaleString()}</p>
+                              <div className="mt-2 bg-muted h-2 rounded-full overflow-hidden">
+                                <div
+                                  className="bg-purple-500 h-full transition-all duration-300"
+                                  style={{ width: `${thruPlaysPercentage}%` }}
+                                ></div>
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-1">{thruPlaysPercentage}% · {metrics.thruplays.toLocaleString()}</p>
                             </div>
                           )}
+
                           {metrics.avgTimeWatched > 0 && (
                             <div className="bg-background p-3 rounded border border-border">
                               <Label className="text-xs text-muted-foreground">Tiempo promedio visto (Calidad real)</Label>
                               <p className="text-lg font-bold text-foreground mt-1">{formatTime(metrics.avgTimeWatched)}</p>
                             </div>
                           )}
-                          {metrics.p50 > 0 && (
-                            <div className="bg-background p-3 rounded border border-border">
-                              <Label className="text-xs text-muted-foreground">Retención 50% (Interés real)</Label>
-                              <p className="text-lg font-bold text-foreground mt-1">{metrics.p50.toLocaleString()}</p>
-                            </div>
-                          )}
-                          {metrics.p100 > 0 && (
-                            <div className="bg-background p-3 rounded border border-border">
-                              <Label className="text-xs text-muted-foreground">Retención 100% (Finalización)</Label>
-                              <p className="text-lg font-bold text-foreground mt-1">{metrics.p100.toLocaleString()}</p>
-                            </div>
-                          )}
                         </div>
+
+                        {/* Retention funnel chart */}
                         {(metrics.videoPlays > 0 || metrics.thruplays > 0 || metrics.p50 > 0 || metrics.p100 > 0) && (
                           <div className="mt-4">
                             <Label className="text-xs text-muted-foreground mb-2 block">Embudo de Retención</Label>
@@ -506,7 +544,7 @@ export default function Creatives() {
               {creative && (
                 <div className="space-y-3">
                   <h3 className="font-semibold text-foreground">Creativo</h3>
-                  
+
                   {creative.thumbnail_url && (
                     <div>
                       <img
@@ -570,6 +608,91 @@ export default function Creatives() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Video Playback Modal */}
+      <Dialog open={videoModalOpen} onOpenChange={setVideoModalOpen}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Reproducción de Video</DialogTitle>
+            <DialogDescription>
+              Vista previa del creativo de video
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {selectedVideo?.url ? (
+              <>
+                {/* Try to detect if it's a Facebook/Meta video URL and embed accordingly */}
+                {selectedVideo.url.includes('facebook.com') || selectedVideo.url.includes('fb.com') ? (
+                  <div className="aspect-video bg-black rounded-lg overflow-hidden flex items-center justify-center">
+                    <div className="text-center space-y-4 p-8">
+                      {selectedVideo.thumbnail && (
+                        <img
+                          src={selectedVideo.thumbnail}
+                          alt="Video thumbnail"
+                          className="max-w-full max-h-96 mx-auto rounded-lg"
+                        />
+                      )}
+                      <p className="text-muted-foreground">
+                        La reproducción directa de videos de Meta no está disponible debido a restricciones de la plataforma.
+                      </p>
+                      <Button asChild>
+                        <a
+                          href={selectedVideo.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2"
+                        >
+                          <Video className="h-4 w-4" />
+                          Ver Video en Facebook
+                        </a>
+                      </Button>
+                    </div>
+                  </div>
+                ) : selectedVideo.url.startsWith('http') ? (
+                  <div className="aspect-video bg-black rounded-lg overflow-hidden">
+                    <video
+                      src={selectedVideo.url}
+                      controls
+                      className="w-full h-full"
+                      poster={selectedVideo.thumbnail}
+                    >
+                      Tu navegador no soporta la reproducción de video.
+                    </video>
+                  </div>
+                ) : (
+                  <div className="aspect-video bg-black rounded-lg overflow-hidden flex items-center justify-center">
+                    <div className="text-center space-y-4 p-8">
+                      {selectedVideo.thumbnail && (
+                        <img
+                          src={selectedVideo.thumbnail}
+                          alt="Video thumbnail"
+                          className="max-w-full max-h-96 mx-auto rounded-lg"
+                        />
+                      )}
+                      <p className="text-muted-foreground">
+                        Video ID: <span className="font-mono">{selectedVideo.url}</span>
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        La URL directa del video no está disponible. Puedes encontrar el video en el administrador de anuncios de Meta.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="aspect-video bg-muted rounded-lg overflow-hidden flex items-center justify-center">
+                <div className="text-center space-y-2 p-8">
+                  <AlertCircle className="h-12 w-12 mx-auto text-muted-foreground opacity-50" />
+                  <p className="text-muted-foreground">
+                    El video no está disponible para reproducción
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
