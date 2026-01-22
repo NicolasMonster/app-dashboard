@@ -239,21 +239,23 @@ export default function Creatives() {
                     </div>
                   )}
 
-                  {/* Image */}
+                  {/* Image with optimized quality */}
                   {creative.image_url && (
                     <div>
                       <Label className="text-muted-foreground mb-2 block">Imagen</Label>
                       <img
                         src={creative.image_url}
                         alt="Ad creative"
-                        className="w-full rounded-lg border border-border"
+                        loading="lazy"
+                        className="w-full rounded-lg border border-border object-cover"
+                        style={{ imageRendering: "-webkit-optimize-contrast" }}
                       />
                     </div>
                   )}
 
 
 
-                  {/* Clickable Video Thumbnail with Modal Playback */}
+                  {/* Clickable Video Thumbnail with Modal Playback - Optimized HD quality */}
                   {creative.thumbnail_url && (
                     <div>
                       <Label className="text-muted-foreground mb-2 block">Video (Miniatura)</Label>
@@ -270,7 +272,9 @@ export default function Creatives() {
                         <img
                           src={creative.thumbnail_url}
                           alt="Video thumbnail"
-                          className="w-full rounded-lg border border-border transition-opacity group-hover:opacity-90"
+                          loading="lazy"
+                          className="w-full rounded-lg border border-border transition-opacity group-hover:opacity-90 object-cover"
+                          style={{ imageRendering: "-webkit-optimize-contrast", maxHeight: "500px" }}
                         />
                         <div className="absolute inset-0 flex items-center justify-center">
                           <div className="bg-black/60 group-hover:bg-black/70 rounded-full p-4 transition-all group-hover:scale-110">
@@ -340,8 +344,16 @@ export default function Creatives() {
                         {/* Retention metrics with percentages and progress bars */}
                         <div className="space-y-3">
                           {metrics.p50 > 0 && (
-                            <div className="bg-background p-3 rounded border border-border">
-                              <Label className="text-xs text-muted-foreground">Retención 50% (Interés real)</Label>
+                            <div className={`bg-background p-3 rounded border ${parseFloat(p50Percentage) < 20 ? "border-orange-500/50" : "border-border"}`}>
+                              <div className="flex items-center justify-between mb-1">
+                                <Label className="text-xs text-muted-foreground">Retención 50% (Interés real)</Label>
+                                {/* Alert: Retención 50% baja (< 20%) */}
+                                {parseFloat(p50Percentage) < 20 && (
+                                  <span className="text-xs px-2 py-0.5 bg-orange-500/20 text-orange-500 rounded-full border border-orange-500/30">
+                                    ⚠️ Bajo
+                                  </span>
+                                )}
+                              </div>
                               <p className="text-lg font-bold text-foreground mt-1">{metrics.p50.toLocaleString()}</p>
                               <div className="mt-2 bg-muted h-2 rounded-full overflow-hidden">
                                 <div
@@ -354,8 +366,16 @@ export default function Creatives() {
                           )}
 
                           {metrics.p100 > 0 && (
-                            <div className="bg-background p-3 rounded border border-border">
-                              <Label className="text-xs text-muted-foreground">Retención 100% (Finalización)</Label>
+                            <div className={`bg-background p-3 rounded border ${parseFloat(p100Percentage) < 10 ? "border-orange-500/50" : "border-border"}`}>
+                              <div className="flex items-center justify-between mb-1">
+                                <Label className="text-xs text-muted-foreground">Retención 100% (Finalización)</Label>
+                                {/* Alert: Retención 100% baja (< 10%) */}
+                                {parseFloat(p100Percentage) < 10 && (
+                                  <span className="text-xs px-2 py-0.5 bg-orange-500/20 text-orange-500 rounded-full border border-orange-500/30">
+                                    ⚠️ Bajo
+                                  </span>
+                                )}
+                              </div>
                               <p className="text-lg font-bold text-foreground mt-1">{metrics.p100.toLocaleString()}</p>
                               <div className="mt-2 bg-muted h-2 rounded-full overflow-hidden">
                                 <div

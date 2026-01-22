@@ -6,7 +6,7 @@ import { trpc } from "@/lib/trpc";
 import { useDateRange } from "@/contexts/DateRangeContext";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { AlertCircle, ArrowRight, Calendar, DollarSign, Eye, Loader2, MousePointerClick, TrendingUp } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Bar, BarChart, Pie, PieChart, Cell } from "recharts";
 import { toast } from "sonner";
 import { Link } from "wouter";
@@ -16,6 +16,7 @@ const COLORS = ["#3b82f6", "#8b5cf6", "#ec4899", "#f59e0b", "#10b981"];
 export default function Dashboard() {
   const { user } = useAuth();
   const { dateRange, dateError } = useDateRange();
+  const [showDebug, setShowDebug] = useState(false);
 
   const { data: credentials } = trpc.metaAds.getCredentials.useQuery();
 
@@ -77,38 +78,74 @@ export default function Dashboard() {
   }, [campaignInsights]);
 
   // Calculate ROI metrics directly from insights for accuracy
+  // This calculation ensures no duplication by using unique ad_id + date combinations
   const roiMetrics = useMemo(() => {
     if (!insights || insights.length === 0) {
-      return { totalSpend: 0, totalGenerated: 0, roas: 0, roi: 0 };
+      return {
+        totalSpend: 0,
+        totalGenerated: 0,
+        roas: 0,
+        roi: 0,
+        debugInfo: { rowCount: 0, uniqueAds: 0, purchaseActions: 0 }
+      };
     }
 
-    // Calculate total spend by summing all insights spend values
-    let totalSpend = 0;
-    insights.forEach((insight: any) => {
-      totalSpend += parseFloat(insight.spend || "0");
-    });
+    // Track unique combinations to avoid duplication
+    const processedKeys = new Set<string>();
+    const uniqueAds = new Set<string>();
 
-    // Calculate total revenue from insights, filtering only purchase-related conversions
+    let totalSpend = 0;
     let totalGenerated = 0;
+    let purchaseActionCount = 0;
+
     insights.forEach((insight: any) => {
+      // Create unique key for deduplication (ad_id + date_start)
+      const uniqueKey = `${insight.ad_id}_${insight.date_start}`;
+
+      // Skip if already processed (prevents duplicate counting)
+      if (processedKeys.has(uniqueKey)) {
+        return;
+      }
+      processedKeys.add(uniqueKey);
+      uniqueAds.add(insight.ad_id);
+
+      // Sum spend from this unique insight
+      const spendValue = parseFloat(insight.spend || "0");
+      totalSpend += spendValue;
+
+      // Sum revenue from purchase actions
       if (insight.action_values && Array.isArray(insight.action_values)) {
         insight.action_values.forEach((action: any) => {
-          // Only count purchase-related conversions to avoid duplication
+          // Only count purchase-related conversions (avoid duplication with other action types)
           if (
             action.action_type === "purchase" ||
             action.action_type === "omni_purchase" ||
             action.action_type === "offsite_conversion.fb_pixel_purchase"
           ) {
-            totalGenerated += parseFloat(action.value || "0");
+            const revenueValue = parseFloat(action.value || "0");
+            totalGenerated += revenueValue;
+            purchaseActionCount++;
           }
         });
       }
     });
 
+    // Calculate ROAS as: total revenue / total spend (NOT averaging ROAS values)
     const roas = totalSpend > 0 ? (totalGenerated / totalSpend).toFixed(2) : "0";
     const roi = totalSpend > 0 ? (((totalGenerated - totalSpend) / totalSpend) * 100).toFixed(1) : "0";
 
-    return { totalSpend, totalGenerated, roas, roi };
+    return {
+      totalSpend,
+      totalGenerated,
+      roas,
+      roi,
+      debugInfo: {
+        rowCount: insights.length,
+        uniqueRows: processedKeys.size,
+        uniqueAds: uniqueAds.size,
+        purchaseActions: purchaseActionCount
+      }
+    };
   }, [insights]);
 
   if (!user) {
@@ -229,14 +266,22 @@ export default function Dashboard() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className={metrics.avgCTR < 1.5 ? "border-orange-500/30" : ""}>
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">CTR Promedio</CardTitle>
                 <TrendingUp className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-foreground">
-                  {metrics.avgCTR.toFixed(2)}%
+                <div className="flex items-center justify-between">
+                  <div className="text-2xl font-bold text-foreground">
+                    {metrics.avgCTR.toFixed(2)}%
+                  </div>
+                  {/* Alert: CTR bajo (< 1.5%) */}
+                  {metrics.avgCTR < 1.5 && (
+                    <span className="text-xs px-2 py-1 bg-orange-500/20 text-orange-500 rounded-full border border-orange-500/30">
+                      Bajo
+                    </span>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -253,14 +298,22 @@ export default function Dashboard() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className={metrics.avgCPC > 2.0 ? "border-orange-500/30" : ""}>
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">CPC Promedio</CardTitle>
                 <DollarSign className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-foreground">
-                  ${metrics.avgCPC.toFixed(2)}
+                <div className="flex items-center justify-between">
+                  <div className="text-2xl font-bold text-foreground">
+                    ${metrics.avgCPC.toFixed(2)}
+                  </div>
+                  {/* Alert: CPC alto (> $2.00) */}
+                  {metrics.avgCPC > 2.0 && (
+                    <span className="text-xs px-2 py-1 bg-orange-500/20 text-orange-500 rounded-full border border-orange-500/30">
+                      Alto
+                    </span>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -282,32 +335,117 @@ export default function Dashboard() {
 
 
         {/* ROI Metrics - Valor Generado y ROAS */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Valor Generado</CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-500">
-                ${roiMetrics.totalGenerated.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">Valor de conversiones</p>
-            </CardContent>
-          </Card>
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Valor Generado</CardTitle>
+                <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-green-500">
+                  ${roiMetrics.totalGenerated.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Valor de conversiones</p>
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">ROAS</CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-foreground">
-                {roiMetrics.roas}x
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">Retorno por dolar gastado</p>
-            </CardContent>
-          </Card>
+            <Card className={parseFloat(roiMetrics.roas) < 2.0 ? (parseFloat(roiMetrics.roas) < 1.0 ? "border-red-500/30" : "border-orange-500/30") : ""}>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">ROAS</CardTitle>
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowDebug(!showDebug)}
+                    className="h-6 px-2 text-xs"
+                  >
+                    {showDebug ? "Ocultar Debug" : "Debug"}
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between">
+                  <div className="text-2xl font-bold text-foreground">
+                    {roiMetrics.roas}x
+                  </div>
+                  {/* Alert: ROAS muy bajo (< 1.0) - perdiendo dinero */}
+                  {parseFloat(roiMetrics.roas) < 1.0 && parseFloat(roiMetrics.roas) > 0 && (
+                    <span className="text-xs px-2 py-1 bg-red-500/20 text-red-500 rounded-full border border-red-500/30">
+                      Crítico
+                    </span>
+                  )}
+                  {/* Alert: ROAS bajo (< 2.0 pero >= 1.0) */}
+                  {parseFloat(roiMetrics.roas) >= 1.0 && parseFloat(roiMetrics.roas) < 2.0 && (
+                    <span className="text-xs px-2 py-1 bg-orange-500/20 text-orange-500 rounded-full border border-orange-500/30">
+                      Bajo
+                    </span>
+                  )}
+                  {/* Good ROAS (>= 2.0) */}
+                  {parseFloat(roiMetrics.roas) >= 2.0 && (
+                    <span className="text-xs px-2 py-1 bg-green-500/20 text-green-500 rounded-full border border-green-500/30">
+                      Bueno
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Retorno por dolar gastado</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Debug Info Panel (DEV ONLY) */}
+          {showDebug && roiMetrics.debugInfo && (
+            <Card className="border-yellow-500/50 bg-yellow-500/5">
+              <CardHeader>
+                <CardTitle className="text-sm font-medium text-yellow-500">🔍 Debug Info - Cálculos ROAS</CardTitle>
+                <CardDescription>Información técnica para validar cálculos</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm font-mono">
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Total Spend (Raw)</Label>
+                    <p className="text-foreground font-semibold">
+                      ${roiMetrics.totalSpend.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Total Revenue (Raw)</Label>
+                    <p className="text-foreground font-semibold">
+                      ${roiMetrics.totalGenerated.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">ROAS Final</Label>
+                    <p className="text-foreground font-semibold">{roiMetrics.roas}x</p>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Filas API</Label>
+                    <p className="text-foreground font-semibold">{roiMetrics.debugInfo.rowCount}</p>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Filas Únicas</Label>
+                    <p className="text-foreground font-semibold">{roiMetrics.debugInfo.uniqueRows}</p>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Anuncios Únicos</Label>
+                    <p className="text-foreground font-semibold">{roiMetrics.debugInfo.uniqueAds}</p>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Purchase Actions</Label>
+                    <p className="text-foreground font-semibold">{roiMetrics.debugInfo.purchaseActions}</p>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Fórmula</Label>
+                    <p className="text-foreground font-semibold text-xs">Revenue / Spend</p>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground mt-3">
+                  ℹ️ Cálculo con deduplicación por ad_id + date_start para evitar contar el mismo día múltiples veces
+                </p>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Campaign Comparison and Spend Distribution */}
