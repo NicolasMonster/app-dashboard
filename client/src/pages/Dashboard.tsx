@@ -5,7 +5,8 @@ import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
 import { useDateRange } from "@/contexts/DateRangeContext";
 import { DateRangePicker } from "@/components/DateRangePicker";
-import { AlertCircle, ArrowRight, Calendar, DollarSign, Eye, Loader2, MousePointerClick, TrendingUp } from "lucide-react";
+import { DatePresets } from "@/components/DatePresets";
+import { AlertCircle, ArrowRight, ArrowUp, ArrowDown, Calendar, DollarSign, Eye, Loader2, MousePointerClick, TrendingUp, Download } from "lucide-react";
 import { useMemo, useState } from "react";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Bar, BarChart, Pie, PieChart, Cell } from "recharts";
 import { toast } from "sonner";
@@ -28,6 +29,32 @@ export default function Dashboard() {
   const { data: insights, isLoading: loadingInsights } = trpc.metaAds.getInsights.useQuery(
     { timeRange: dateRange, level: "ad" },
     { enabled: !!credentials && !dateError, staleTime: 0 }
+  );
+
+  // Calculate previous period for comparison
+  const previousPeriod = useMemo(() => {
+    if (!dateRange.since || !dateRange.until) return null;
+
+    const sinceDate = new Date(dateRange.since);
+    const untilDate = new Date(dateRange.until);
+    const diffDays = Math.ceil((untilDate.getTime() - sinceDate.getTime()) / (1000 * 60 * 60 * 24));
+
+    const prevUntil = new Date(sinceDate);
+    prevUntil.setDate(prevUntil.getDate() - 1);
+
+    const prevSince = new Date(prevUntil);
+    prevSince.setDate(prevSince.getDate() - diffDays);
+
+    return {
+      since: prevSince.toISOString().split('T')[0],
+      until: prevUntil.toISOString().split('T')[0]
+    };
+  }, [dateRange]);
+
+  // Query insights for previous period to calculate comparison
+  const { data: previousInsights } = trpc.metaAds.getInsights.useQuery(
+    { timeRange: previousPeriod!, level: "ad" },
+    { enabled: !!credentials && !!previousPeriod, staleTime: 0 }
   );
 
   const { data: campaignInsights, isLoading: loadingCampaigns } = trpc.metaAds.getInsights.useQuery(
@@ -148,6 +175,93 @@ export default function Dashboard() {
     };
   }, [insights]);
 
+  // Calculate previous period metrics for comparison
+  const previousMetrics = useMemo(() => {
+    if (!previousInsights || previousInsights.length === 0) {
+      return { totalSpend: 0, totalGenerated: 0, roas: "0" };
+    }
+
+    const processedKeys = new Set<string>();
+    let totalSpend = 0;
+    let totalGenerated = 0;
+
+    previousInsights.forEach((insight: any) => {
+      const uniqueKey = `${insight.ad_id}_${insight.date_start}`;
+      if (processedKeys.has(uniqueKey)) return;
+      processedKeys.add(uniqueKey);
+
+      totalSpend += parseFloat(insight.spend || "0");
+
+      if (insight.action_values && Array.isArray(insight.action_values)) {
+        insight.action_values.forEach((action: any) => {
+          if (
+            action.action_type === "purchase" ||
+            action.action_type === "omni_purchase" ||
+            action.action_type === "offsite_conversion.fb_pixel_purchase"
+          ) {
+            totalGenerated += parseFloat(action.value || "0");
+          }
+        });
+      }
+    });
+
+    const roas = totalSpend > 0 ? (totalGenerated / totalSpend).toFixed(2) : "0";
+
+    return { totalSpend, totalGenerated, roas };
+  }, [previousInsights]);
+
+  // Calculate percentage change for metrics comparison
+  const getPercentageChange = (current: number, previous: number) => {
+    if (previous === 0) return current > 0 ? 100 : 0;
+    return ((current - previous) / previous) * 100;
+  };
+
+  // Export dashboard data to CSV
+  const exportToCSV = () => {
+    if (!metrics && !roiMetrics) {
+      toast.error("No hay datos para exportar");
+      return;
+    }
+
+    // Prepare CSV data
+    const csvRows = [
+      ["Métrica", "Valor", "Período"],
+      ["", "", `${dateRange.since} a ${dateRange.until}`],
+      [""],
+      ["=== MÉTRICAS PRINCIPALES ===", "", ""],
+      ["Gasto Total", `$${metrics?.totalSpend.toFixed(2) || 0}`, ""],
+      ["Impresiones", metrics?.totalImpressions.toLocaleString() || 0, ""],
+      ["Clics", metrics?.totalClicks.toLocaleString() || 0, ""],
+      ["CTR Promedio", `${metrics?.avgCTR.toFixed(2)}%` || "0%", ""],
+      ["Alcance", metrics?.totalReach.toLocaleString() || 0, ""],
+      ["CPC Promedio", `$${metrics?.avgCPC.toFixed(2)}` || "$0", ""],
+      ["CPM Promedio", `$${metrics?.avgCPM.toFixed(2)}` || "$0", ""],
+      [""],
+      ["=== ROI Y CONVERSIONES ===", "", ""],
+      ["Valor Generado", `$${roiMetrics.totalGenerated.toFixed(2)}`, ""],
+      ["ROAS", `${roiMetrics.roas}x`, ""],
+      ["ROI", `${roiMetrics.roi}%`, ""],
+    ];
+
+    // Convert to CSV string
+    const csvContent = csvRows.map(row => row.join(",")).join("\n");
+
+    // Create blob and download
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    const fileName = `meta-ads-dashboard-${dateRange.since}-${dateRange.until}.csv`;
+
+    link.setAttribute("href", url);
+    link.setAttribute("download", fileName);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    toast.success("Datos exportados correctamente");
+  };
+
   if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -203,8 +317,20 @@ export default function Dashboard() {
             <p className="text-muted-foreground mt-1">Análisis de rendimiento de tus campañas</p>
           </div>
 
-          {/* Interactive Date Range Picker */}
-          <DateRangePicker />
+          {/* Interactive Date Range Picker with Quick Presets and Export */}
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportToCSV}
+              className="gap-2"
+            >
+              <Download className="h-4 w-4" />
+              Exportar CSV
+            </Button>
+            <DatePresets />
+            <DateRangePicker />
+          </div>
           {dateError && (
             <Card className="border-red-500/50 bg-red-500/5">
               <CardContent className="p-4">
@@ -239,6 +365,28 @@ export default function Dashboard() {
                 <div className="text-2xl font-bold text-foreground">
                   ${metrics.totalSpend.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
+                {/* Comparison vs previous period */}
+                {previousMetrics.totalSpend > 0 && (
+                  <div className="flex items-center gap-1 mt-2">
+                    {(() => {
+                      const change = getPercentageChange(metrics.totalSpend, previousMetrics.totalSpend);
+                      const isPositive = change >= 0;
+                      return (
+                        <>
+                          {isPositive ? (
+                            <ArrowUp className="h-3 w-3 text-muted-foreground" />
+                          ) : (
+                            <ArrowDown className="h-3 w-3 text-muted-foreground" />
+                          )}
+                          <span className="text-xs font-medium text-muted-foreground">
+                            {Math.abs(change).toFixed(1)}%
+                          </span>
+                          <span className="text-xs text-muted-foreground">vs período anterior</span>
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -346,6 +494,28 @@ export default function Dashboard() {
                 <div className="text-2xl font-bold text-green-500">
                   ${roiMetrics.totalGenerated.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
+                {/* Comparison vs previous period */}
+                {previousMetrics.totalGenerated > 0 && (
+                  <div className="flex items-center gap-1 mt-2">
+                    {(() => {
+                      const change = getPercentageChange(roiMetrics.totalGenerated, previousMetrics.totalGenerated);
+                      const isPositive = change >= 0;
+                      return (
+                        <>
+                          {isPositive ? (
+                            <ArrowUp className="h-3 w-3 text-green-500" />
+                          ) : (
+                            <ArrowDown className="h-3 w-3 text-red-500" />
+                          )}
+                          <span className={`text-xs font-medium ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
+                            {Math.abs(change).toFixed(1)}%
+                          </span>
+                          <span className="text-xs text-muted-foreground">vs período anterior</span>
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
                 <p className="text-xs text-muted-foreground mt-1">Valor de conversiones</p>
               </CardContent>
             </Card>
@@ -389,6 +559,30 @@ export default function Dashboard() {
                     </span>
                   )}
                 </div>
+                {/* Comparison vs previous period */}
+                {parseFloat(previousMetrics.roas) > 0 && (
+                  <div className="flex items-center gap-1 mt-2">
+                    {(() => {
+                      const currentRoas = parseFloat(roiMetrics.roas);
+                      const prevRoas = parseFloat(previousMetrics.roas);
+                      const change = getPercentageChange(currentRoas, prevRoas);
+                      const isPositive = change >= 0;
+                      return (
+                        <>
+                          {isPositive ? (
+                            <ArrowUp className="h-3 w-3 text-green-500" />
+                          ) : (
+                            <ArrowDown className="h-3 w-3 text-red-500" />
+                          )}
+                          <span className={`text-xs font-medium ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
+                            {Math.abs(change).toFixed(1)}%
+                          </span>
+                          <span className="text-xs text-muted-foreground">vs período anterior</span>
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
                 <p className="text-xs text-muted-foreground mt-1">Retorno por dolar gastado</p>
               </CardContent>
             </Card>
