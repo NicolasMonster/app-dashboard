@@ -280,7 +280,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   } = params;
 
   const payload: Record<string, unknown> = {
-    model: "gemini-2.5-flash",
+    model: "gpt-4-turbo",
     messages: messages.map(normalizeMessage),
   };
 
@@ -296,10 +296,8 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.tool_choice = normalizedToolChoice;
   }
 
-  payload.max_tokens = 32768
-  payload.thinking = {
-    "budget_tokens": 128
-  }
+  // Max tokens for GPT-4 Turbo (supports up to 128k context)
+  payload.max_tokens = 4096
 
   const normalizedResponseFormat = normalizeResponseFormat({
     responseFormat,
