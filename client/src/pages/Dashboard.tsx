@@ -76,39 +76,40 @@ export default function Dashboard() {
     }));
   }, [campaignInsights]);
 
-  // Calculate ROI metrics from account-level data for consistency
+  // Calculate ROI metrics directly from insights for accuracy
   const roiMetrics = useMemo(() => {
-    if (!metrics) {
+    if (!insights || insights.length === 0) {
       return { totalSpend: 0, totalGenerated: 0, roas: 0, roi: 0 };
     }
 
-    // Use metrics from getMetrics query (account-level aggregation)
-    const totalSpend = metrics.totalSpend || 0;
+    // Calculate total spend by summing all insights spend values
+    let totalSpend = 0;
+    insights.forEach((insight: any) => {
+      totalSpend += parseFloat(insight.spend || "0");
+    });
 
     // Calculate total revenue from insights, filtering only purchase-related conversions
     let totalGenerated = 0;
-    if (insights && insights.length > 0) {
-      insights.forEach((insight: any) => {
-        if (insight.action_values && Array.isArray(insight.action_values)) {
-          insight.action_values.forEach((action: any) => {
-            // Only count purchase-related conversions to avoid duplication
-            if (
-              action.action_type === "purchase" ||
-              action.action_type === "omni_purchase" ||
-              action.action_type === "offsite_conversion.fb_pixel_purchase"
-            ) {
-              totalGenerated += parseFloat(action.value || "0");
-            }
-          });
-        }
-      });
-    }
+    insights.forEach((insight: any) => {
+      if (insight.action_values && Array.isArray(insight.action_values)) {
+        insight.action_values.forEach((action: any) => {
+          // Only count purchase-related conversions to avoid duplication
+          if (
+            action.action_type === "purchase" ||
+            action.action_type === "omni_purchase" ||
+            action.action_type === "offsite_conversion.fb_pixel_purchase"
+          ) {
+            totalGenerated += parseFloat(action.value || "0");
+          }
+        });
+      }
+    });
 
     const roas = totalSpend > 0 ? (totalGenerated / totalSpend).toFixed(2) : "0";
     const roi = totalSpend > 0 ? (((totalGenerated - totalSpend) / totalSpend) * 100).toFixed(1) : "0";
 
     return { totalSpend, totalGenerated, roas, roi };
-  }, [metrics, insights]);
+  }, [insights]);
 
   if (!user) {
     return (
@@ -199,7 +200,7 @@ export default function Dashboard() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-foreground">
-                  ${metrics.totalSpend.toFixed(2)}
+                  ${metrics.totalSpend.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
               </CardContent>
             </Card>
@@ -289,7 +290,7 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-green-500">
-                ${roiMetrics.totalGenerated.toFixed(2)}
+                ${roiMetrics.totalGenerated.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
               <p className="text-xs text-muted-foreground mt-1">Valor de conversiones</p>
             </CardContent>

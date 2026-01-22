@@ -304,6 +304,9 @@ export default function Creatives() {
                       return `${mins}m ${secs}s`;
                     };
 
+                    // Extract impressions from ad data
+                    const impressions = ad.impressions ? parseInt(ad.impressions, 10) : 0;
+
                     // Calculate percentages based on initial video plays (3s views)
                     const baseViews = metrics.videoPlays || 1; // Avoid division by zero
                     const p50Percentage = metrics.p50 > 0 ? ((metrics.p50 / baseViews) * 100).toFixed(1) : "0";
@@ -313,6 +316,14 @@ export default function Creatives() {
                     return (
                       <div className="space-y-4 p-4 bg-accent/20 rounded-lg border border-border">
                         <h3 className="font-semibold text-foreground">📊 Métricas de Retención de Video</h3>
+
+                        {/* Impressions - First metric (initial reach) */}
+                        {impressions > 0 && (
+                          <div className="bg-background p-3 rounded border border-border">
+                            <Label className="text-xs text-muted-foreground">Impresiones (Alcance inicial)</Label>
+                            <p className="text-lg font-bold text-foreground mt-1">{impressions.toLocaleString()}</p>
+                          </div>
+                        )}
 
                         {/* Video Plays - Base metric */}
                         {metrics.videoPlays > 0 && (

@@ -13,7 +13,7 @@ import { AlertCircle, ArrowRight, Calendar, Eye, Loader2, TrendingDown, Trending
 import { useState } from "react";
 import { Link } from "wouter";
 
-type SortBy = "ctr" | "cpc" | "conversions" | "roas";
+type SortBy = "ctr" | "cpc" | "conversions" | "roas" | "retention";
 
 export default function Rankings() {
   const { user } = useAuth();
@@ -24,9 +24,15 @@ export default function Rankings() {
 
   const { data: credentials } = trpc.metaAds.getCredentials.useQuery();
 
+  // For retention rankings, we use insights at ad level instead of getRankings
+  const { data: insights } = trpc.metaAds.getInsights.useQuery(
+    { timeRange: dateRange, level: "ad" },
+    { enabled: !!credentials && sortBy === "retention" }
+  );
+
   const { data: rankings, isLoading } = trpc.metaAds.getRankings.useQuery(
     { timeRange: dateRange, sortBy, limit: 20 },
-    { enabled: !!credentials }
+    { enabled: !!credentials && sortBy !== "retention" }
   );
 
   const { data: creative, isLoading: loadingCreative } = trpc.metaAds.getAdCreative.useQuery(
@@ -39,7 +45,41 @@ export default function Rankings() {
     setDetailsModalOpen(true);
   };
 
-  // Video metrics are not available from Meta Ads API Insights endpoint
+  // Process retention rankings from insights
+  const retentionRankings = insights && sortBy === "retention" ? (() => {
+    // Calculate retention metrics for each ad with video data
+    const adsWithRetention = insights
+      .map((ad: any) => {
+        const videoPlays = ad.video_play_actions?.[0]?.value ? parseInt(ad.video_play_actions[0].value, 10) : 0;
+        const p50 = ad.video_p50_watched_actions?.[0]?.value ? parseInt(ad.video_p50_watched_actions[0].value, 10) : 0;
+        const p100 = ad.video_p100_watched_actions?.[0]?.value ? parseInt(ad.video_p100_watched_actions[0].value, 10) : 0;
+
+        // Calculate retention percentages
+        const p50Percentage = videoPlays > 0 ? (p50 / videoPlays) * 100 : 0;
+        const p100Percentage = videoPlays > 0 ? (p100 / videoPlays) * 100 : 0;
+
+        // Use the highest retention percentage available
+        const bestRetention = Math.max(p50Percentage, p100Percentage);
+
+        return {
+          ...ad,
+          videoPlays,
+          p50,
+          p100,
+          p50Percentage,
+          p100Percentage,
+          bestRetention
+        };
+      })
+      // Filter only ads with video data
+      .filter((ad: any) => ad.videoPlays > 0)
+      // Sort by best retention percentage (descending)
+      .sort((a: any, b: any) => b.bestRetention - a.bestRetention)
+      // Limit to top 20
+      .slice(0, 20);
+
+    return adsWithRetention;
+  })() : null;
 
   if (!user) {
     return (
@@ -96,11 +136,12 @@ export default function Rankings() {
 
         {/* Rankings Tabs */}
         <Tabs defaultValue="ctr" onValueChange={(value) => setSortBy(value as SortBy)}>
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="ctr">Mejor CTR</TabsTrigger>
             <TabsTrigger value="cpc">Menor CPC</TabsTrigger>
             <TabsTrigger value="conversions">Más Conversiones</TabsTrigger>
             <TabsTrigger value="roas">Mejor ROAS</TabsTrigger>
+            <TabsTrigger value="retention">Mejor Retención</TabsTrigger>
           </TabsList>
 
           <TabsContent value={sortBy} className="mt-6">
@@ -111,15 +152,20 @@ export default function Rankings() {
                   {sortBy === "cpc" && "Anuncios con Menor CPC"}
                   {sortBy === "conversions" && "Anuncios con Más Conversiones"}
                   {sortBy === "roas" && "Anuncios con Mejor ROAS"}
+                  {sortBy === "retention" && "Anuncios con Mejor Retención"}
                 </CardTitle>
-                <CardDescription>Top 20 anuncios ordenados por rendimiento</CardDescription>
+                <CardDescription>
+                  {sortBy === "retention"
+                    ? "Top 20 anuncios con videos ordenados por mayor retención (50% o 100%)"
+                    : "Top 20 anuncios ordenados por rendimiento"}
+                </CardDescription>
               </CardHeader>
               <CardContent>
-                {isLoading ? (
+                {(isLoading || (sortBy === "retention" && !retentionRankings)) ? (
                   <div className="flex items-center justify-center py-12">
                     <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                   </div>
-                ) : rankings && rankings.length > 0 ? (
+                ) : (sortBy === "retention" ? retentionRankings : rankings) && (sortBy === "retention" ? retentionRankings : rankings).length > 0 ? (
                   <div className="overflow-x-auto">
                     <Table>
                       <TableHeader>
@@ -128,10 +174,22 @@ export default function Rankings() {
                           <TableHead>Nombre del Anuncio</TableHead>
                           <TableHead>Campaña</TableHead>
                           <TableHead className="text-right">Impresiones</TableHead>
-                          <TableHead className="text-right">Clics</TableHead>
-                          <TableHead className="text-right">CTR</TableHead>
-                          <TableHead className="text-right">CPC</TableHead>
-                          <TableHead className="text-right">Gasto</TableHead>
+                          {sortBy !== "retention" && (
+                            <>
+                              <TableHead className="text-right">Clics</TableHead>
+                              <TableHead className="text-right">CTR</TableHead>
+                              <TableHead className="text-right">CPC</TableHead>
+                              <TableHead className="text-right">Gasto</TableHead>
+                            </>
+                          )}
+                          {sortBy === "retention" && (
+                            <>
+                              <TableHead className="text-right">Vistas 3s</TableHead>
+                              <TableHead className="text-right">Retención 50%</TableHead>
+                              <TableHead className="text-right">Retención 100%</TableHead>
+                              <TableHead className="text-right">% Mejor Retención</TableHead>
+                            </>
+                          )}
                           {sortBy === "conversions" && (
                             <TableHead className="text-right">Conversiones</TableHead>
                           )}
@@ -140,7 +198,7 @@ export default function Rankings() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {rankings.map((ad: any, index: number) => (
+                        {(sortBy === "retention" ? retentionRankings : rankings).map((ad: any, index: number) => (
                           <TableRow key={ad.ad_id || index}>
                             <TableCell className="font-medium">{index + 1}</TableCell>
                             <TableCell className="font-medium">
@@ -152,25 +210,55 @@ export default function Rankings() {
                             <TableCell className="text-right">
                               {parseInt(ad.impressions || "0", 10).toLocaleString()}
                             </TableCell>
-                            <TableCell className="text-right">
-                              {parseInt(ad.clicks || "0", 10).toLocaleString()}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <div className="flex items-center justify-end gap-1">
-                                {parseFloat(ad.ctr || "0") > 2 ? (
-                                  <TrendingUp className="h-3 w-3 text-green-500" />
-                                ) : (
-                                  <TrendingDown className="h-3 w-3 text-yellow-500" />
-                                )}
-                                {parseFloat(ad.ctr || "0").toFixed(2)}%
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-right">
-                              ${parseFloat(ad.cpc || "0").toFixed(2)}
-                            </TableCell>
-                            <TableCell className="text-right font-medium">
-                              ${parseFloat(ad.spend || "0").toFixed(2)}
-                            </TableCell>
+                            {sortBy !== "retention" && (
+                              <>
+                                <TableCell className="text-right">
+                                  {parseInt(ad.clicks || "0", 10).toLocaleString()}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <div className="flex items-center justify-end gap-1">
+                                    {parseFloat(ad.ctr || "0") > 2 ? (
+                                      <TrendingUp className="h-3 w-3 text-green-500" />
+                                    ) : (
+                                      <TrendingDown className="h-3 w-3 text-yellow-500" />
+                                    )}
+                                    {parseFloat(ad.ctr || "0").toFixed(2)}%
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  ${parseFloat(ad.cpc || "0").toFixed(2)}
+                                </TableCell>
+                                <TableCell className="text-right font-medium">
+                                  ${parseFloat(ad.spend || "0").toFixed(2)}
+                                </TableCell>
+                              </>
+                            )}
+                            {sortBy === "retention" && (
+                              <>
+                                <TableCell className="text-right">
+                                  {ad.videoPlays.toLocaleString()}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <div className="space-y-1">
+                                    <div className="font-medium">{ad.p50.toLocaleString()}</div>
+                                    <div className="text-xs text-muted-foreground">
+                                      {ad.p50Percentage.toFixed(1)}%
+                                    </div>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <div className="space-y-1">
+                                    <div className="font-medium">{ad.p100.toLocaleString()}</div>
+                                    <div className="text-xs text-muted-foreground">
+                                      {ad.p100Percentage.toFixed(1)}%
+                                    </div>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right font-bold text-green-500">
+                                  {ad.bestRetention.toFixed(1)}%
+                                </TableCell>
+                              </>
+                            )}
                             {sortBy === "conversions" && (
                               <TableCell className="text-right font-bold text-green-500">
                                 {ad.conversions || 0}
@@ -198,7 +286,9 @@ export default function Rankings() {
                   </div>
                 ) : (
                   <div className="text-center py-12 text-muted-foreground">
-                    No hay datos disponibles para el rango de fechas seleccionado
+                    {sortBy === "retention"
+                      ? "No hay anuncios con métricas de retención de video para el rango de fechas seleccionado"
+                      : "No hay datos disponibles para el rango de fechas seleccionado"}
                   </div>
                 )}
               </CardContent>
