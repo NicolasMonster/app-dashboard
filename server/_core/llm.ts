@@ -280,7 +280,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   } = params;
 
   const payload: Record<string, unknown> = {
-    model: "gpt-4-turbo",
+    model: "gpt-5.2",
     messages: messages.map(normalizeMessage),
   };
 
