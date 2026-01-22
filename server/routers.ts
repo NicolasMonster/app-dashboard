@@ -278,6 +278,112 @@ export const appRouter = router({
         return creative;
       }),
   }),
+
+  // AI Assistant - STRICT: NO META ADS API ACCESS
+  // Only analyzes preprocessed data from frontend
+  ai: router({
+    analyze: protectedProcedure
+      .input(
+        z.object({
+          // Context data already processed by frontend
+          context: z.object({
+            period: z.string(),
+            spend: z.number(),
+            impressions: z.number().optional(),
+            clicks: z.number().optional(),
+            ctr: z.number().optional(),
+            cpc: z.number().optional(),
+            cpm: z.number().optional(),
+            reach: z.number().optional(),
+            topCampaigns: z.array(z.object({
+              name: z.string(),
+              spend: z.number(),
+            })).optional(),
+            retention: z.object({
+              videoPlays: z.number().optional(),
+              p50: z.number().optional(),
+              p100: z.number().optional(),
+            }).optional(),
+          }),
+          // User's question to the AI
+          question: z.string().min(1, "Question is required"),
+          // Conversation history (optional)
+          history: z.array(z.object({
+            role: z.enum(["user", "assistant"]),
+            content: z.string(),
+          })).optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const { invokeLLM } = await import("./_core/llm");
+
+        // System prompt - MANDATORY: AI as analyst only
+        const systemPrompt = `Sos un analista senior especializado en Meta Ads.
+Respondé únicamente usando los datos provistos.
+No inventes datos.
+No hagas suposiciones externas.
+Si la información no alcanza, decilo explícitamente.
+Entregá insights accionables y claros.
+
+CONTEXTO DE DATOS ACTUAL:
+- Período: ${input.context.period}
+- Gasto Total: $${input.context.spend.toFixed(2)}
+${input.context.impressions ? `- Impresiones: ${input.context.impressions.toLocaleString()}` : ''}
+${input.context.clicks ? `- Clics: ${input.context.clicks.toLocaleString()}` : ''}
+${input.context.ctr ? `- CTR: ${input.context.ctr.toFixed(2)}%` : ''}
+${input.context.cpc ? `- CPC: $${input.context.cpc.toFixed(2)}` : ''}
+${input.context.cpm ? `- CPM: $${input.context.cpm.toFixed(2)}` : ''}
+${input.context.reach ? `- Alcance: ${input.context.reach.toLocaleString()}` : ''}
+${input.context.topCampaigns && input.context.topCampaigns.length > 0 ? `
+Top Campañas:
+${input.context.topCampaigns.map(c => `  - ${c.name}: $${c.spend.toFixed(2)}`).join('\n')}` : ''}
+${input.context.retention ? `
+Métricas de Retención:
+  - Video Plays: ${input.context.retention.videoPlays || 0}
+  - 50% Vistos: ${input.context.retention.p50 || 0}
+  - 100% Vistos: ${input.context.retention.p100 || 0}` : ''}
+
+Respondé de forma concisa y estructurada. Usa bullets cuando sea apropiado.`;
+
+        // Build messages array
+        const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+          { role: "system", content: systemPrompt },
+        ];
+
+        // Add conversation history if provided
+        if (input.history && input.history.length > 0) {
+          input.history.forEach(msg => {
+            messages.push({
+              role: msg.role,
+              content: msg.content,
+            });
+          });
+        }
+
+        // Add current question
+        messages.push({
+          role: "user",
+          content: input.question,
+        });
+
+        // Invoke LLM (using existing forge API setup)
+        const result = await invokeLLM({
+          messages,
+          maxTokens: 1000, // Limit response length
+        });
+
+        const assistantMessage = result.choices[0]?.message?.content;
+
+        if (typeof assistantMessage !== 'string') {
+          throw new Error("Unexpected response format from AI");
+        }
+
+        return {
+          response: assistantMessage,
+          usage: result.usage,
+        };
+      }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;
