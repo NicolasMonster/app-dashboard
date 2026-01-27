@@ -296,8 +296,8 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.tool_choice = normalizedToolChoice;
   }
 
-  // Max tokens for GPT-4 Turbo (supports up to 128k context)
-  payload.max_tokens = 4096
+  // Max completion tokens for GPT-5.2 and newer models
+  payload.max_completion_tokens = 4096
 
   const normalizedResponseFormat = normalizeResponseFormat({
     responseFormat,
