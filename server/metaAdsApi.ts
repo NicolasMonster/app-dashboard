@@ -83,6 +83,10 @@ export interface MetaAdsInsight {
     action_type: string;
     value: string;
   }>;
+  purchase_roas?: Array<{
+    action_type: string;
+    value: string;
+  }>;
   date_start?: string;
   date_stop?: string;
 }
@@ -153,6 +157,7 @@ export async function fetchMetaAdsInsights(params: MetaAdsInsightsParams): Promi
       "actions",
       "action_values",
       "cost_per_action_type",
+      "purchase_roas",
     ],
   } = params;
 
@@ -162,6 +167,7 @@ export async function fetchMetaAdsInsights(params: MetaAdsInsightsParams): Promi
     access_token: accessToken,
     level,
     fields: fields.join(","),
+    action_breakdowns: "action_type",
   };
 
   if (timeRange) {
@@ -250,12 +256,31 @@ export async function fetchCampaigns(accountId: string, accessToken: string) {
 
 /**
  * Calculate ROAS (Return on Ad Spend)
+ * Prioriza purchase_roas de la API, si no existe lo calcula
  */
 export function calculateROAS(insight: MetaAdsInsight): number {
+  // Primero intenta obtener purchase_roas directamente de la API
+  const purchaseRoas = insight.purchase_roas?.find(
+    (pr) =>
+      pr.action_type === "purchase" ||
+      pr.action_type === "offsite_conversion.fb_pixel_purchase" ||
+      pr.action_type === "omni_purchase"
+  );
+
+  if (purchaseRoas) {
+    return parseFloat(purchaseRoas.value || "0");
+  }
+
+  // Si no hay purchase_roas, calcularlo manualmente
   const spend = parseFloat(insight.spend || "0");
   if (spend === 0) return 0;
 
-  const purchaseValue = insight.action_values?.find((av) => av.action_type === "purchase" || av.action_type === "omni_purchase");
+  const purchaseValue = insight.action_values?.find(
+    (av) =>
+      av.action_type === "purchase" ||
+      av.action_type === "offsite_conversion.fb_pixel_purchase" ||
+      av.action_type === "omni_purchase"
+  );
 
   if (purchaseValue) {
     const revenue = parseFloat(purchaseValue.value || "0");
@@ -277,4 +302,18 @@ export function getConversionCount(insight: MetaAdsInsight): number {
   );
 
   return conversion ? parseFloat(conversion.value || "0") : 0;
+}
+
+/**
+ * Get purchase value (revenue) from action_values
+ */
+export function getPurchaseValue(insight: MetaAdsInsight): number {
+  const purchaseValue = insight.action_values?.find(
+    (av) =>
+      av.action_type === "purchase" ||
+      av.action_type === "offsite_conversion.fb_pixel_purchase" ||
+      av.action_type === "omni_purchase"
+  );
+
+  return purchaseValue ? parseFloat(purchaseValue.value || "0") : 0;
 }

@@ -143,6 +143,9 @@ export const appRouter = router({
           timeGranularity: input.timeRange ? "daily" : undefined,
         });
 
+        // Import helper functions for ROAS and purchase value
+        const { getPurchaseValue } = await import("./metaAdsApi");
+
         // Aggregate metrics
         const metrics = {
           totalSpend: 0,
@@ -152,6 +155,8 @@ export const appRouter = router({
           avgCTR: 0,
           avgCPC: 0,
           avgCPM: 0,
+          purchaseValue: 0,
+          roas: 0,
         };
 
         insights.forEach((insight) => {
@@ -159,6 +164,9 @@ export const appRouter = router({
           metrics.totalImpressions += parseInt(insight.impressions || "0", 10);
           metrics.totalReach += parseInt(insight.reach || "0", 10);
           metrics.totalClicks += parseInt(insight.clicks || "0", 10);
+
+          // Sumar el valor de compras (revenue)
+          metrics.purchaseValue += getPurchaseValue(insight);
         });
 
         // Calculate averages
@@ -170,6 +178,11 @@ export const appRouter = router({
           metrics.avgCTR = totalCTR / insights.length;
           metrics.avgCPC = totalCPC / insights.length;
           metrics.avgCPM = totalCPM / insights.length;
+        }
+
+        // Calculate ROAS (Revenue / Spend)
+        if (metrics.totalSpend > 0) {
+          metrics.roas = metrics.purchaseValue / metrics.totalSpend;
         }
 
         await setCachedData(ctx.user.id, cacheKey, metrics, 30);

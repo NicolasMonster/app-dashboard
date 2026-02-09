@@ -360,6 +360,67 @@ export default function Dashboard() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* ROAS Card */}
+            <Card
+              className={
+                metrics.roas >= 2
+                  ? "border-green-500/30"
+                  : metrics.roas >= 1
+                  ? "border-yellow-500/30"
+                  : metrics.roas > 0
+                  ? "border-red-500/30"
+                  : ""
+              }
+              title="Retorno de inversión publicitaria (Revenue / Gasto)"
+            >
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">ROAS</CardTitle>
+                <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between">
+                  <div className="text-2xl font-bold text-foreground">
+                    {metrics.roas > 0 ? metrics.roas.toFixed(1) : "0.0"}x
+                  </div>
+                  {/* Indicador de color según ROAS */}
+                  {metrics.roas >= 2 && (
+                    <span className="text-xs px-2 py-1 bg-green-500/20 text-green-500 rounded-full border border-green-500/30">
+                      Bueno
+                    </span>
+                  )}
+                  {metrics.roas >= 1 && metrics.roas < 2 && (
+                    <span className="text-xs px-2 py-1 bg-yellow-500/20 text-yellow-500 rounded-full border border-yellow-500/30">
+                      Moderado
+                    </span>
+                  )}
+                  {metrics.roas > 0 && metrics.roas < 1 && (
+                    <span className="text-xs px-2 py-1 bg-red-500/20 text-red-500 rounded-full border border-red-500/30">
+                      Bajo
+                    </span>
+                  )}
+                  {metrics.roas === 0 && (
+                    <span className="text-xs px-2 py-1 bg-gray-500/20 text-gray-500 rounded-full border border-gray-500/30">
+                      Sin datos
+                    </span>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Valor de Resultados (Facturación) Card */}
+            <Card title="Facturación total generada por las campañas">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Facturación</CardTitle>
+                <DollarSign className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-green-500">
+                  ${metrics.purchaseValue > 0 ? metrics.purchaseValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0.00"}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Valor de resultados</p>
+              </CardContent>
+            </Card>
           </div>
         ) : null}
 
