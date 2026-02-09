@@ -1,30 +1,25 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "client/**/*",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": "dist/public"
-      }
-    },
-    {
-      "src": "api/index.ts",
-      "use": "@vercel/node"
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist/public",
+  "installCommand": "npm install",
+  "framework": null,
+  "functions": {
+    "api/index.ts": {
+      "runtime": "@vercel/node@3.0.0"
     }
-  ],
-  "routes": [
+  },
+  "rewrites": [
     {
-      "src": "/api/trpc/(.*)",
-      "dest": "/api/index"
+      "source": "/api/trpc/:path*",
+      "destination": "/api/index"
     },
     {
-      "src": "/api/oauth/(.*)",
-      "dest": "/api/index"
+      "source": "/api/oauth/:path*",
+      "destination": "/api/index"
     },
     {
-      "src": "/(.*)",
-      "dest": "/dist/public/$1"
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
