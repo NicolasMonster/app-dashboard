@@ -1,190 +1,81 @@
-# 🚀 Guía de Deployment para ads.elevatearg.com
+# 🚀 Guía de Deployment
 
-## Opción 1: Deployment automático desde Windows (RECOMENDADO)
+## Opción 1: Script Automático (Recomendado)
 
-### Pasos:
-
-1. **Abrí PowerShell como Administrador** (clic derecho > Ejecutar como administrador)
-
-2. **Navega a la carpeta del proyecto:**
-   ```powershell
-   cd C:\ruta\a\app-dashboard
-   ```
-
-3. **Ejecuta el script:**
-   ```powershell
-   .\deploy-windows.ps1
-   ```
-
-El script automáticamente:
-- ✅ Descarga herramientas necesarias (plink, pscp)
-- ✅ Copia el script al servidor
-- ✅ Instala Node.js, pnpm, Nginx
-- ✅ Clona el repositorio
-- ✅ Instala dependencias
-- ✅ Construye el proyecto
-- ✅ Configura Nginx
-- ✅ Inicia la app con PM2
-
----
-
-## Opción 2: Deployment manual vía SSH
-
-### Paso 1: Conectarse al servidor
-
-Desde **PowerShell** o **CMD**:
+### Ejecutar desde tu computadora local:
 
 ```bash
-ssh root@72.60.157.10
+cd /ruta/a/app-dashboard
+./deploy.sh
 ```
 
-**Contraseña:** `SomosELEVATE655+`
-
-### Paso 2: Copiar el script al servidor
-
-Desde **otra terminal en tu PC Windows** (en la carpeta del proyecto):
+Si no tienes `sshpass`, instálalo primero:
 
 ```bash
-scp deploy-to-server.sh root@72.60.157.10:/root/
-```
+# En Ubuntu/Debian
+sudo apt install sshpass
 
-### Paso 3: Ejecutar el script en el servidor
-
-Ya conectado por SSH:
-
-```bash
-chmod +x /root/deploy-to-server.sh
-/root/deploy-to-server.sh
+# En macOS
+brew install hudochenkov/sshpass/sshpass
 ```
 
 ---
 
-## Configuración de variables de entorno
+## Opción 2: Deployment Manual
 
-**IMPORTANTE:** Después del deployment, debes configurar tus credenciales de Meta.
-
-Conectate por SSH y edita el archivo `.env`:
+Conectarte al servidor:
 
 ```bash
 ssh root@72.60.157.10
-nano /var/www/app-dashboard/.env
+# Contraseña: SomosELEVATE655+
 ```
 
-Contenido del `.env`:
+Luego ejecuta estos comandos en el servidor:
 
-```env
-# Meta Business API Configuration
-META_ACCESS_TOKEN=tu_token_de_acceso_aqui
-META_AD_ACCOUNT_ID=act_tu_id_de_cuenta_aqui
+```bash
+# 1. Instalar dependencias
+apt update && apt install -y git curl
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+apt install -y nodejs
+npm install -g pnpm pm2
 
-# Server Configuration
+# 2. Clonar repositorio
+cd /var/www
+git clone https://github.com/NicolasMonster/app-dashboard.git
+cd app-dashboard
+git checkout claude/add-dashboard-header-zAJoM
+
+# 3. Crear .env
+cat > .env << 'ENVEOF'
 PORT=3000
 NODE_ENV=production
+JWT_SECRET=ElevateArg-SecretKey-2024-Production
+VITE_APP_ID=bordados-jas-dashboard
+ENVEOF
+
+# 4. Instalar y compilar
+pnpm install
+pnpm run build
+
+# 5. Iniciar con PM2
+pm2 start npm --name "app-dashboard" -- start
+pm2 save
+pm2 startup
+
+# 6. Instalar y configurar Caddy
+apt install -y debian-keyring debian-archive-keyring apt-transport-https
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+apt update && apt install -y caddy
+
+cat > /etc/caddy/Caddyfile << 'CADDYEOF'
+ads.elevatearg.com {
+    reverse_proxy localhost:3000
+}
+CADDYEOF
+
+systemctl restart caddy
+systemctl enable caddy
 ```
 
-Después de editar, reinicia la aplicación:
-
-```bash
-pm2 restart ads-dashboard
-```
-
----
-
-## Verificar el deployment
-
-### Ver logs en tiempo real:
-```bash
-pm2 logs ads-dashboard
-```
-
-### Ver estado de la aplicación:
-```bash
-pm2 status
-```
-
-### Reiniciar la aplicación:
-```bash
-pm2 restart ads-dashboard
-```
-
-### Ver logs de Nginx:
-```bash
-tail -f /var/log/nginx/ads.elevatearg.com.access.log
-tail -f /var/log/nginx/ads.elevatearg.com.error.log
-```
-
----
-
-## SSL/HTTPS (Opcional pero recomendado)
-
-Para habilitar HTTPS con certificado gratuito de Let's Encrypt:
-
-```bash
-ssh root@72.60.157.10
-apt install -y certbot python3-certbot-nginx
-certbot --nginx -d ads.elevatearg.com
-```
-
----
-
-## Actualizar la aplicación después del primer deployment
-
-Cuando hagas cambios en el código:
-
-1. **Conectate por SSH:**
-   ```bash
-   ssh root@72.60.157.10
-   ```
-
-2. **Actualiza el código:**
-   ```bash
-   cd /var/www/app-dashboard
-   git pull origin claude/add-dashboard-header-zAJoM
-   pnpm install
-   pnpm build
-   pm2 restart ads-dashboard
-   ```
-
-O simplemente vuelve a ejecutar el script de deployment:
-
-```bash
-/root/deploy-to-server.sh
-```
-
----
-
-## Troubleshooting
-
-### La app no inicia:
-```bash
-pm2 logs ads-dashboard
-```
-Revisa los logs para ver el error.
-
-### Nginx no responde:
-```bash
-systemctl status nginx
-nginx -t  # Verificar configuración
-systemctl restart nginx
-```
-
-### No se ve el sitio:
-1. Verifica que el DNS de `ads.elevatearg.com` apunte a `72.60.157.10`
-2. Verifica que el firewall permita tráfico HTTP (puerto 80)
-
----
-
-## URLs
-
-- **Sitio web:** http://ads.elevatearg.com
-- **Con SSL:** https://ads.elevatearg.com (después de configurar Let's Encrypt)
-
----
-
-## Notas importantes
-
-- ✅ El script usa **PM2** para mantener la app corriendo 24/7
-- ✅ PM2 reiniciará automáticamente la app si el servidor se reinicia
-- ✅ Nginx funciona como proxy reverso (puerto 80 → 3000)
-- ⚠️ **NUNCA** subas el archivo `.env` al repositorio de Git
-- 🔒 Considera cambiar la contraseña SSH después del deployment
+🌐 Aplicación disponible en: https://ads.elevatearg.com
