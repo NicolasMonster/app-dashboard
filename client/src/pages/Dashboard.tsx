@@ -7,7 +7,7 @@ import { useDateRange } from "@/contexts/DateRangeContext";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { DatePresets } from "@/components/DatePresets";
 import { AIAssistant, AIContext } from "@/components/AIAssistant";
-import { AlertCircle, ArrowRight, ArrowUp, ArrowDown, Bot, Calendar, DollarSign, Eye, Loader2, MousePointerClick, TrendingUp } from "lucide-react";
+import { AlertCircle, ArrowRight, ArrowUp, ArrowDown, Bot, DollarSign, Eye, Loader2, MousePointerClick, ShoppingCart, TrendingUp } from "lucide-react";
 import { useMemo, useState } from "react";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Bar, BarChart, Pie, PieChart, Cell } from "recharts";
 import { Link } from "wouter";
@@ -103,6 +103,63 @@ export default function Dashboard() {
       value: parseFloat(campaign.spend || "0"),
     }));
   }, [campaignInsights]);
+
+  // Calculate ROAS and total revenue from purchase action_values
+  const roasMetrics = useMemo(() => {
+    if (!insights || insights.length === 0) return { totalRoas: 0, totalRevenue: 0 };
+
+    let totalRevenue = 0;
+    let totalSpend = 0;
+
+    insights.forEach((insight: any) => {
+      const spend = parseFloat(insight.spend || "0");
+      totalSpend += spend;
+
+      const purchaseValue = insight.action_values?.find(
+        (av: any) => av.action_type === "purchase" || av.action_type === "omni_purchase"
+      );
+      if (purchaseValue) {
+        totalRevenue += parseFloat(purchaseValue.value || "0");
+      }
+    });
+
+    return {
+      totalRoas: totalSpend > 0 ? totalRevenue / totalSpend : 0,
+      totalRevenue,
+    };
+  }, [insights]);
+
+  // ROAS over time for line chart
+  const roasTimelineData = useMemo(() => {
+    if (!insights || insights.length === 0) return [];
+
+    const dataByDate = new Map<string, { date: string; spend: number; revenue: number }>();
+
+    insights.forEach((insight: any) => {
+      const date = insight.date_start || "Unknown";
+      const existing = dataByDate.get(date) || { date, spend: 0, revenue: 0 };
+
+      existing.spend += parseFloat(insight.spend || "0");
+
+      const purchaseValue = insight.action_values?.find(
+        (av: any) => av.action_type === "purchase" || av.action_type === "omni_purchase"
+      );
+      if (purchaseValue) {
+        existing.revenue += parseFloat(purchaseValue.value || "0");
+      }
+
+      dataByDate.set(date, existing);
+    });
+
+    return Array.from(dataByDate.values())
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map((d) => ({
+        date: d.date,
+        roas: d.spend > 0 ? parseFloat((d.revenue / d.spend).toFixed(2)) : 0,
+        spend: parseFloat(d.spend.toFixed(2)),
+        revenue: parseFloat(d.revenue.toFixed(2)),
+      }));
+  }, [insights]);
 
   // Calculate previous period metrics for comparison (only spend)
   const previousMetrics = useMemo(() => {
@@ -360,8 +417,139 @@ export default function Dashboard() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* ROAS KPI */}
+            <Card className={roasMetrics.totalRoas > 0 && roasMetrics.totalRoas < 2 ? "border-orange-500/30" : roasMetrics.totalRoas >= 3 ? "border-green-500/30" : ""}>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">ROAS</CardTitle>
+                <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between">
+                  <div className="text-2xl font-bold text-foreground">
+                    {roasMetrics.totalRoas > 0 ? `${roasMetrics.totalRoas.toFixed(2)}x` : "—"}
+                  </div>
+                  {roasMetrics.totalRoas > 0 && roasMetrics.totalRoas < 2 && (
+                    <span className="text-xs px-2 py-1 bg-orange-500/20 text-orange-500 rounded-full border border-orange-500/30">
+                      Bajo
+                    </span>
+                  )}
+                  {roasMetrics.totalRoas >= 3 && (
+                    <span className="text-xs px-2 py-1 bg-green-500/20 text-green-500 rounded-full border border-green-500/30">
+                      Bueno
+                    </span>
+                  )}
+                </div>
+                {roasMetrics.totalRoas === 0 && (
+                  <p className="text-xs text-muted-foreground mt-1">Sin datos de conversión</p>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Ventas (Revenue) KPI */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Valor Generado</CardTitle>
+                <ShoppingCart className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-foreground">
+                  {roasMetrics.totalRevenue > 0
+                    ? `$${roasMetrics.totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                    : "—"}
+                </div>
+                {roasMetrics.totalRevenue === 0 && (
+                  <p className="text-xs text-muted-foreground mt-1">Sin conversiones registradas</p>
+                )}
+              </CardContent>
+            </Card>
           </div>
         ) : null}
+
+        {/* ROAS over time + Ventas vs Inversión */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>ROAS en el Tiempo</CardTitle>
+              <CardDescription>Retorno sobre inversión publicitaria por día</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loadingInsights ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                </div>
+              ) : roasTimelineData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={roasTimelineData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="oklch(1 0 0 / 10%)" />
+                    <XAxis dataKey="date" stroke="oklch(0.705 0.015 286.067)" tick={{ fontSize: 11 }} />
+                    <YAxis stroke="oklch(0.705 0.015 286.067)" />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "oklch(0.21 0.006 285.885)",
+                        border: "1px solid oklch(1 0 0 / 10%)",
+                        borderRadius: "8px",
+                      }}
+                      formatter={(value: number) => [`${value.toFixed(2)}x`, "ROAS"]}
+                    />
+                    <Legend />
+                    <Line
+                      type="monotone"
+                      dataKey="roas"
+                      stroke="#10b981"
+                      strokeWidth={2}
+                      dot={false}
+                      name="ROAS"
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="text-center py-12 text-muted-foreground">
+                  <TrendingUp className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                  <p>Sin datos de ROAS para este período</p>
+                  <p className="text-xs mt-1">Requiere eventos de compra configurados en Meta Pixel</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Ventas vs Inversión</CardTitle>
+              <CardDescription>Gasto publicitario vs valor generado por día</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loadingInsights ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                </div>
+              ) : roasTimelineData.filter((d) => d.revenue > 0 || d.spend > 0).length > 0 ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={roasTimelineData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="oklch(1 0 0 / 10%)" />
+                    <XAxis dataKey="date" stroke="oklch(0.705 0.015 286.067)" tick={{ fontSize: 11 }} />
+                    <YAxis stroke="oklch(0.705 0.015 286.067)" />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "oklch(0.21 0.006 285.885)",
+                        border: "1px solid oklch(1 0 0 / 10%)",
+                        borderRadius: "8px",
+                      }}
+                      formatter={(value: number) => [`$${value.toFixed(2)}`]}
+                    />
+                    <Legend />
+                    <Bar dataKey="spend" fill="#3b82f6" name="Inversión ($)" />
+                    <Bar dataKey="revenue" fill="#10b981" name="Ventas ($)" />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="text-center py-12 text-muted-foreground">
+                  Sin datos para este período
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
 
         {/* Campaign Comparison and Spend Distribution */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

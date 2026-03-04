@@ -383,6 +383,89 @@ Respondé de forma concisa y estructurada. Usa bullets cuando sea apropiado.`;
           usage: result.usage,
         };
       }),
+
+    // Structured creative analysis with Diagnóstico, Recomendaciones, Proyecciones
+    analyzeCreative: protectedProcedure
+      .input(
+        z.object({
+          adName: z.string(),
+          campaignName: z.string().optional(),
+          period: z.string(),
+          metrics: z.object({
+            spend: z.number(),
+            impressions: z.number(),
+            clicks: z.number(),
+            ctr: z.number(),
+            cpc: z.number(),
+            cpm: z.number(),
+            roas: z.number().optional(),
+            revenue: z.number().optional(),
+            videoPlays: z.number().optional(),
+            p50: z.number().optional(),
+            p100: z.number().optional(),
+            thruplays: z.number().optional(),
+            avgTimeWatched: z.number().optional(),
+          }),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const { invokeLLM } = await import("./_core/llm");
+
+        const videoSection =
+          (input.metrics.videoPlays ?? 0) > 0
+            ? `\nMÉTRICAS DE VIDEO:
+- Reproducciones: ${input.metrics.videoPlays?.toLocaleString()}
+${input.metrics.thruplays ? `- ThruPlays (≥15s): ${input.metrics.thruplays.toLocaleString()}` : ""}
+${input.metrics.p50 ? `- Retención 50%: ${input.metrics.p50.toLocaleString()}` : ""}
+${input.metrics.p100 ? `- Retención 100%: ${input.metrics.p100.toLocaleString()}` : ""}
+${input.metrics.avgTimeWatched ? `- Tiempo promedio visto: ${input.metrics.avgTimeWatched.toFixed(1)}s` : ""}`
+            : "";
+
+        const systemPrompt = `Sos un analista senior especializado en Meta Ads.
+Analizá el desempeño del anuncio con los datos provistos y respondé en español con tres secciones bien delimitadas:
+
+## DIAGNÓSTICO
+Evaluación objetiva del rendimiento. Identificá qué está funcionando y qué no.
+
+## RECOMENDACIONES
+Lista concreta de acciones para optimizar el creativo y la campaña (mínimo 3 puntos).
+
+## PROYECCIONES
+Estimaciones de mejora esperada si se implementan las recomendaciones (usa rangos conservadores).
+
+Usá solo los datos provistos. No inventes números. Sé conciso y accionable.`;
+
+        const userMessage = `Analizá este anuncio:
+
+**Nombre:** ${input.adName}
+${input.campaignName ? `**Campaña:** ${input.campaignName}` : ""}
+**Período:** ${input.period}
+
+MÉTRICAS DE RENDIMIENTO:
+- Gasto: $${input.metrics.spend.toFixed(2)}
+- Impresiones: ${input.metrics.impressions.toLocaleString()}
+- Clics: ${input.metrics.clicks.toLocaleString()}
+- CTR: ${input.metrics.ctr.toFixed(2)}%
+- CPC: $${input.metrics.cpc.toFixed(2)}
+- CPM: $${input.metrics.cpm.toFixed(2)}
+${input.metrics.roas ? `- ROAS: ${input.metrics.roas.toFixed(2)}x` : ""}
+${input.metrics.revenue ? `- Valor Generado: $${input.metrics.revenue.toFixed(2)}` : ""}${videoSection}`;
+
+        const result = await invokeLLM({
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userMessage },
+          ],
+          maxTokens: 900,
+        });
+
+        const analysis = result.choices[0]?.message?.content;
+        if (typeof analysis !== "string") {
+          throw new Error("Unexpected response format from AI");
+        }
+
+        return { analysis };
+      }),
   }),
 });
 

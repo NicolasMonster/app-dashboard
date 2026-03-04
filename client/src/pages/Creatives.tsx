@@ -7,9 +7,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { trpc } from "@/lib/trpc";
 import { useDateRange } from "@/contexts/DateRangeContext";
-import { AlertCircle, ArrowRight, Calendar, Image as ImageIcon, Loader2, Search, Video, X } from "lucide-react";
+import { AlertCircle, ArrowRight, Bot, Image as ImageIcon, Loader2, Search, Sparkles, Video } from "lucide-react";
 import { useState } from "react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { Link } from "wouter";
 
 export default function Creatives() {
@@ -21,6 +21,8 @@ export default function Creatives() {
   const [selectedAdForModal, setSelectedAdForModal] = useState<any>(null);
   const [videoModalOpen, setVideoModalOpen] = useState(false);
   const [selectedVideo, setSelectedVideo] = useState<{ url?: string; thumbnail?: string } | null>(null);
+  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+  const [aiAnalysisAdId, setAiAnalysisAdId] = useState<string | null>(null);
 
   const { data: credentials } = trpc.metaAds.getCredentials.useQuery();
 
@@ -33,6 +35,45 @@ export default function Creatives() {
     { adId: selectedAdId! },
     { enabled: !!selectedAdId }
   );
+
+  const analyzeCreativeMutation = trpc.ai.analyzeCreative.useMutation({
+    onSuccess: (data) => {
+      setAiAnalysis(data.analysis);
+    },
+  });
+
+  const handleAnalyzeCreative = (ad: any) => {
+    setAiAnalysisAdId(ad.ad_id);
+    setAiAnalysis(null);
+
+    const videoMetrics = getVideoRetentionMetrics(ad);
+    const purchaseValue = ad.action_values?.find(
+      (av: any) => av.action_type === "purchase" || av.action_type === "omni_purchase"
+    );
+    const revenue = purchaseValue ? parseFloat(purchaseValue.value || "0") : 0;
+    const spend = parseFloat(ad.spend || "0");
+
+    analyzeCreativeMutation.mutate({
+      adName: ad.ad_name || "Sin nombre",
+      campaignName: ad.campaign_name,
+      period: `${dateRange.since || "N/A"} → ${dateRange.until || "N/A"}`,
+      metrics: {
+        spend,
+        impressions: parseInt(ad.impressions || "0", 10),
+        clicks: parseInt(ad.clicks || "0", 10),
+        ctr: parseFloat(ad.ctr || "0"),
+        cpc: parseFloat(ad.cpc || "0"),
+        cpm: parseFloat(ad.cpm || "0"),
+        roas: spend > 0 && revenue > 0 ? revenue / spend : undefined,
+        revenue: revenue > 0 ? revenue : undefined,
+        videoPlays: videoMetrics.videoPlays > 0 ? videoMetrics.videoPlays : undefined,
+        p50: videoMetrics.p50 > 0 ? videoMetrics.p50 : undefined,
+        p100: videoMetrics.p100 > 0 ? videoMetrics.p100 : undefined,
+        thruplays: videoMetrics.thruplays > 0 ? videoMetrics.thruplays : undefined,
+        avgTimeWatched: videoMetrics.avgTimeWatched > 0 ? videoMetrics.avgTimeWatched : undefined,
+      },
+    });
+  };
 
   // Filter ads by search query
   const filteredAds = insights?.filter((ad: any) => {
@@ -183,6 +224,26 @@ export default function Creatives() {
                         <span>Impresiones: {parseInt(ad.impressions || "0", 10).toLocaleString()}</span>
                         <span>Clics: {parseInt(ad.clicks || "0", 10).toLocaleString()}</span>
                         <span>CTR: {parseFloat(ad.ctr || "0").toFixed(2)}%</span>
+                      </div>
+                      <div className="mt-2 flex justify-end">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-xs gap-1 h-7"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedAdId(ad.ad_id);
+                            handleAnalyzeCreative(ad);
+                          }}
+                          disabled={analyzeCreativeMutation.isPending && aiAnalysisAdId === ad.ad_id}
+                        >
+                          {analyzeCreativeMutation.isPending && aiAnalysisAdId === ad.ad_id ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Sparkles className="h-3 w-3" />
+                          )}
+                          Análisis IA
+                        </Button>
                       </div>
                     </button>
                   ))}
@@ -460,14 +521,54 @@ export default function Creatives() {
                   {selectedAdId && insights && (() => {
                     const ad = insights.find((a: any) => a.ad_id === selectedAdId);
                     return ad ? (
-                      <Button 
-                        onClick={() => openDetailsModal(ad)}
-                        className="w-full"
-                      >
-                        Ver Detalles Completos
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={() => openDetailsModal(ad)}
+                          className="flex-1"
+                          variant="outline"
+                        >
+                          Ver Detalles Completos
+                        </Button>
+                        <Button
+                          onClick={() => handleAnalyzeCreative(ad)}
+                          className="flex-1 gap-2"
+                          disabled={analyzeCreativeMutation.isPending && aiAnalysisAdId === ad.ad_id}
+                        >
+                          {analyzeCreativeMutation.isPending && aiAnalysisAdId === ad.ad_id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Bot className="h-4 w-4" />
+                          )}
+                          Análisis IA
+                        </Button>
+                      </div>
                     ) : null;
                   })()}
+
+                  {/* AI Analysis Panel */}
+                  {aiAnalysisAdId === selectedAdId && (aiAnalysis || (analyzeCreativeMutation.isPending && aiAnalysisAdId === selectedAdId)) && (
+                    <div className="mt-2 space-y-3 p-4 bg-primary/5 rounded-lg border border-primary/20">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="h-4 w-4 text-primary" />
+                        <h3 className="font-semibold text-foreground text-sm">Análisis IA del Creativo</h3>
+                      </div>
+                      {analyzeCreativeMutation.isPending ? (
+                        <div className="flex items-center justify-center py-6 gap-2 text-muted-foreground">
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                          <span className="text-sm">Analizando con IA...</span>
+                        </div>
+                      ) : analyzeCreativeMutation.isError ? (
+                        <div className="flex items-center gap-2 text-red-500 text-sm">
+                          <AlertCircle className="h-4 w-4" />
+                          <span>Error al analizar. Intentá de nuevo.</span>
+                        </div>
+                      ) : aiAnalysis ? (
+                        <div className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
+                          {aiAnalysis}
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
 
                   {/* No creative data */}
                   {!creative.name &&
